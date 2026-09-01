@@ -8,265 +8,72 @@
 <link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@600;700&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@500;700&display=swap" rel="stylesheet">
 <style>
   :root{
-    --graphite:#1B1E21;
-    --steel:#26292D;
-    --steel-2:#2F3338;
-    --amber:#F5A623;
-    --green:#4CAF6D;
-    --red:#E4572E;
-    --ink:#ECEDEE;
-    --ink-dim:#9AA0A6;
-    --line:#3A3F44;
+    --graphite:#1B1E21; --steel:#26292D; --steel-2:#2F3338;
+    --amber:#F5A623; --green:#4CAF6D; --red:#E4572E; --blue:#5B9BD5;
+    --ink:#ECEDEE; --ink-dim:#9AA0A6; --line:#3A3F44;
   }
   *{box-sizing:border-box;}
   html,body{margin:0;padding:0;}
-  body{
-    background:var(--graphite);
-    color:var(--ink);
-    font-family:'Inter',sans-serif;
-    min-height:100vh;
-    -webkit-tap-highlight-color:transparent;
-  }
-  .app{
-    max-width:520px;
-    margin:0 auto;
-    min-height:100vh;
-    display:flex;
-    flex-direction:column;
-  }
-  header{
-    padding:20px 20px 14px;
-    border-bottom:1px solid var(--line);
-  }
-  header .eyebrow{
-    font-family:'JetBrains Mono',monospace;
-    font-size:11px;
-    letter-spacing:.12em;
-    text-transform:uppercase;
-    color:var(--amber);
-    margin:0 0 4px;
-  }
-  h1{
-    font-family:'Barlow Condensed',sans-serif;
-    font-weight:700;
-    font-size:30px;
-    letter-spacing:.01em;
-    margin:0;
-    line-height:1;
-  }
-  nav{
-    display:flex;
-    gap:0;
-    border-bottom:1px solid var(--line);
-  }
-  nav button{
-    flex:1;
-    background:none;
-    border:none;
-    color:var(--ink-dim);
-    font-family:'Inter',sans-serif;
-    font-weight:600;
-    font-size:14px;
-    padding:14px 8px;
-    cursor:pointer;
-    border-bottom:2px solid transparent;
-  }
-  nav button.active{
-    color:var(--amber);
-    border-bottom-color:var(--amber);
-  }
-  main{
-    flex:1;
-    padding:20px;
-  }
-  .card{
-    background:var(--steel);
-    border:1px solid var(--line);
-    border-radius:12px;
-    padding:18px;
-    margin-bottom:14px;
-  }
-  label{
-    display:block;
-    font-size:12px;
-    font-weight:600;
-    color:var(--ink-dim);
-    text-transform:uppercase;
-    letter-spacing:.06em;
-    margin-bottom:8px;
-  }
-  select, input{
-    width:100%;
-    background:var(--steel-2);
-    border:1px solid var(--line);
-    color:var(--ink);
-    font-family:'Inter',sans-serif;
-    font-size:16px;
-    padding:14px;
-    border-radius:8px;
-    margin-bottom:16px;
-  }
-  select:focus, input:focus{
-    outline:2px solid var(--amber);
-    outline-offset:1px;
-  }
-  .job-grid{
-    display:grid;
-    grid-template-columns:1fr 1fr;
-    gap:10px;
-    margin-bottom:16px;
-  }
+  body{ background:var(--graphite); color:var(--ink); font-family:'Inter',sans-serif; min-height:100vh; -webkit-tap-highlight-color:transparent; }
+  .app{ max-width:520px; margin:0 auto; min-height:100vh; display:flex; flex-direction:column; }
+  header{ padding:20px 20px 14px; border-bottom:1px solid var(--line); }
+  header .eyebrow{ font-family:'JetBrains Mono',monospace; font-size:11px; letter-spacing:.12em; text-transform:uppercase; color:var(--amber); margin:0 0 4px; }
+  h1{ font-family:'Barlow Condensed',sans-serif; font-weight:700; font-size:28px; margin:0; line-height:1; }
+  nav{ display:flex; border-bottom:1px solid var(--line); }
+  nav button{ flex:1; background:none; border:none; color:var(--ink-dim); font-weight:600; font-size:14px; padding:14px 8px; cursor:pointer; border-bottom:2px solid transparent; }
+  nav button.active{ color:var(--amber); border-bottom-color:var(--amber); }
+  main{ flex:1; padding:20px; padding-bottom:60px; }
+  .card{ background:var(--steel); border:1px solid var(--line); border-radius:12px; padding:18px; margin-bottom:14px; }
+  label{ display:block; font-size:12px; font-weight:600; color:var(--ink-dim); text-transform:uppercase; letter-spacing:.06em; margin-bottom:8px; }
+  select, input{ width:100%; background:var(--steel-2); border:1px solid var(--line); color:var(--ink); font-family:'Inter',sans-serif; font-size:16px; padding:14px; border-radius:8px; margin-bottom:14px; }
+  select:focus, input:focus{ outline:2px solid var(--amber); outline-offset:1px; }
+  .job-list{ display:flex; flex-direction:column; gap:8px; margin-bottom:14px; max-height:340px; overflow-y:auto; }
   .job-btn{
-    background:var(--steel-2);
-    border:1px solid var(--line);
-    color:var(--ink);
-    border-radius:8px;
-    padding:16px 10px;
-    text-align:center;
-    cursor:pointer;
-    font-family:'Inter',sans-serif;
+    background:var(--steel-2); border:1px solid var(--line); color:var(--ink); border-radius:8px;
+    padding:12px 14px; cursor:pointer; display:flex; justify-content:space-between; align-items:center;
   }
-  .job-btn .code{
-    font-family:'JetBrains Mono',monospace;
-    font-weight:700;
-    font-size:18px;
-    display:block;
-  }
-  .job-btn .std{
-    font-size:12px;
-    color:var(--ink-dim);
-    display:block;
-    margin-top:2px;
-  }
-  .job-btn.selected{
-    border-color:var(--amber);
-    background:rgba(245,166,35,0.12);
-  }
-  button.primary{
-    width:100%;
-    background:var(--amber);
-    color:#1B1E21;
-    border:none;
-    font-family:'Inter',sans-serif;
-    font-weight:700;
-    font-size:16px;
-    padding:16px;
-    border-radius:8px;
-    cursor:pointer;
-  }
-  button.primary:disabled{
-    background:var(--steel-2);
-    color:var(--ink-dim);
-    cursor:not-allowed;
-  }
-  button.danger{
-    background:var(--red);
-    color:white;
-  }
-  .active-job{
-    text-align:center;
-  }
-  .active-job .code{
-    font-family:'JetBrains Mono',monospace;
-    font-size:34px;
-    font-weight:700;
-    color:var(--amber);
-  }
-  .active-job .meta{
-    color:var(--ink-dim);
-    font-size:13px;
-    margin:6px 0 18px;
-  }
-  .timer{
-    font-family:'JetBrains Mono',monospace;
-    font-size:44px;
-    font-weight:700;
-    margin:8px 0 20px;
-  }
-  .empty{
-    text-align:center;
-    color:var(--ink-dim);
-    padding:40px 10px;
-  }
-  .empty .big{
-    font-family:'Barlow Condensed',sans-serif;
-    font-size:22px;
-    color:var(--ink);
-    margin-bottom:6px;
-  }
-  table{
-    width:100%;
-    border-collapse:collapse;
-    font-size:13px;
-  }
-  th{
-    text-align:left;
-    font-size:11px;
-    text-transform:uppercase;
-    letter-spacing:.05em;
-    color:var(--ink-dim);
-    padding:8px 6px;
-    border-bottom:1px solid var(--line);
-  }
-  td{
-    padding:10px 6px;
-    border-bottom:1px solid var(--line);
-    font-family:'JetBrains Mono',monospace;
-  }
-  .diff-pos{color:var(--red);}
-  .diff-neg{color:var(--green);}
-  .summary-row{
-    display:flex;
-    justify-content:space-between;
-    padding:12px 0;
-    border-bottom:1px solid var(--line);
-  }
-  .summary-row:last-child{border-bottom:none;}
-  .summary-row .name{font-weight:600;}
-  .summary-row .stat{
-    font-family:'JetBrains Mono',monospace;
-    text-align:right;
-  }
-  .stat .n{font-size:18px;font-weight:700;}
-  .stat .label{font-size:10px;color:var(--ink-dim);display:block;}
-  .pin-screen{
-    display:flex;
-    flex-direction:column;
-    align-items:center;
-    justify-content:center;
-    padding:60px 20px;
-    text-align:center;
-  }
-  .pin-screen input{
-    max-width:160px;
-    text-align:center;
-    letter-spacing:.3em;
-    font-family:'JetBrains Mono',monospace;
-    font-size:20px;
-  }
-  .toast{
-    position:fixed;
-    bottom:20px;
-    left:50%;
-    transform:translateX(-50%);
-    background:var(--steel-2);
-    border:1px solid var(--amber);
-    color:var(--ink);
-    padding:12px 20px;
-    border-radius:8px;
-    font-size:14px;
-    z-index:100;
-  }
-  .refresh{
-    background:none;
-    border:1px solid var(--line);
-    color:var(--ink-dim);
-    font-size:12px;
-    padding:8px 12px;
-    border-radius:6px;
-    cursor:pointer;
-    margin-bottom:14px;
-  }
+  .job-btn .code{ font-family:'JetBrains Mono',monospace; font-weight:700; }
+  .job-btn .dur{ font-size:11px; color:var(--ink-dim); }
+  .job-btn.selected{ border-color:var(--amber); background:rgba(245,166,35,0.12); }
+  .job-btn.selected .code{ color:var(--amber); }
+  .mts-tag{ font-size:9px; background:rgba(91,155,213,0.18); color:var(--blue); padding:2px 6px; border-radius:10px; margin-left:6px; }
+  button.primary{ width:100%; background:var(--amber); color:#1B1E21; border:none; font-weight:700; font-size:16px; padding:16px; border-radius:8px; cursor:pointer; }
+  button.primary:disabled{ background:var(--steel-2); color:var(--ink-dim); cursor:not-allowed; }
+  button.secondary{ width:100%; background:var(--steel-2); color:var(--ink); border:1px solid var(--line); font-weight:600; font-size:14px; padding:12px; border-radius:8px; cursor:pointer; }
+  .hours-row{ display:flex; gap:10px; align-items:center; }
+  .hours-row input{ margin-bottom:0; }
+  .hours-saved{ font-family:'JetBrains Mono',monospace; color:var(--green); font-size:14px; text-align:center; padding:8px 0; }
+  .entry-list{ display:flex; flex-direction:column; gap:8px; }
+  .entry{ display:flex; justify-content:space-between; align-items:center; background:var(--steel-2); border:1px solid var(--line); border-radius:8px; padding:12px 14px; }
+  .entry .code{ font-family:'JetBrains Mono',monospace; font-weight:700; color:var(--amber); margin-right:8px; }
+  .entry .ref{ font-family:'JetBrains Mono',monospace; color:var(--ink); font-size:13px; }
+  .entry .extra{ font-size:11px; background:rgba(228,87,46,0.15); color:var(--red); padding:3px 8px; border-radius:20px; font-family:'JetBrains Mono',monospace; margin-left:6px; }
+  .empty{ text-align:center; color:var(--ink-dim); padding:30px 10px; }
+  .empty .big{ font-family:'Barlow Condensed',sans-serif; font-size:20px; color:var(--ink); margin-bottom:6px; }
+  .summary-row{ padding:12px 0; border-bottom:1px solid var(--line); }
+  .summary-row:last-child{ border-bottom:none; }
+  .summary-row .top-row{ display:flex; justify-content:space-between; }
+  .summary-row .name{ font-weight:600; }
+  .summary-row .sub{ font-size:11px; color:var(--ink-dim); }
+  .summary-row .stat{ font-family:'JetBrains Mono',monospace; text-align:right; }
+  .stat .n{ font-size:16px; font-weight:700; }
+  .stat .label{ font-size:10px; color:var(--ink-dim); display:block; }
+  .cap-bar{ height:6px; background:var(--steel-2); border-radius:3px; margin-top:6px; overflow:hidden; }
+  .cap-fill{ height:100%; background:var(--green); }
+  .cap-fill.over{ background:var(--red); }
+  table{ width:100%; border-collapse:collapse; font-size:12px; }
+  th{ text-align:left; font-size:10px; text-transform:uppercase; color:var(--ink-dim); padding:8px 4px; border-bottom:1px solid var(--line); }
+  td{ padding:9px 4px; border-bottom:1px solid var(--line); font-family:'JetBrains Mono',monospace; }
+  .pin-screen{ display:flex; flex-direction:column; align-items:center; justify-content:center; padding:60px 20px; text-align:center; }
+  .pin-screen input{ max-width:160px; text-align:center; letter-spacing:.3em; font-family:'JetBrains Mono',monospace; font-size:20px; }
+  .toast{ position:fixed; bottom:20px; left:50%; transform:translateX(-50%); background:var(--steel-2); border:1px solid var(--amber); color:var(--ink); padding:12px 20px; border-radius:8px; font-size:14px; z-index:100; }
+  .refresh{ background:none; border:1px solid var(--line); color:var(--ink-dim); font-size:12px; padding:8px 12px; border-radius:6px; cursor:pointer; margin-bottom:14px; }
+  .revenue-split{ display:flex; gap:12px; }
+  .revenue-box{ flex:1; text-align:center; padding:12px 6px; background:var(--steel-2); border-radius:8px; }
+  .revenue-box .amount{ font-family:'JetBrains Mono',monospace; font-size:20px; font-weight:700; color:var(--green); }
+  .revenue-box.mts .amount{ color:var(--blue); }
+  .revenue-box .sub{ font-size:10px; color:var(--ink-dim); text-transform:uppercase; letter-spacing:.04em; margin-top:4px; }
+  .revenue-total{ text-align:center; padding:6px 0 14px; font-family:'JetBrains Mono',monospace; font-size:26px; font-weight:700; }
 </style>
 </head>
 <body>
@@ -285,27 +92,24 @@
 <script type="module">
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 
-// ==== SUPABASE BAĞLANTISI ====
 const SUPABASE_URL = "https://mfgofccidwmrqlyjbsvz.supabase.co"
 const SUPABASE_KEY = "sb_publishable_n5PXoej2lr_FQQVCjag0jw_EifWkYir"
 const supabase = createClient(SUPABASE_URL, SUPABASE_KEY)
 
-// Şef paneli için basit PIN (istersen değiştir)
 const BOSS_PIN = "1234"
+const REGIESTUNDE_RATE = 33.28
+const BRANCHES = ['Audi', 'Horn', 'Wiesendamm']
 
 const main = document.getElementById('main')
 const headerTitle = document.getElementById('headerTitle')
 const tabEmployee = document.getElementById('tabEmployee')
 const tabBoss = document.getElementById('tabBoss')
 
-let currentTab = 'employee'
 let bossUnlocked = false
 let employees = []
 let jobTypes = []
 let selectedEmployeeId = null
-let selectedJobTypeId = null
-let activeRecord = null
-let timerInterval = null
+let selectedJobType = null
 
 function showToast(msg){
   const t = document.createElement('div')
@@ -315,9 +119,28 @@ function showToast(msg){
   setTimeout(()=> t.remove(), 2500)
 }
 
+function todayRange(){
+  const start = new Date(); start.setHours(0,0,0,0)
+  return start.toISOString()
+}
+
+function fmtEur(n){
+  return '€' + n.toLocaleString('de-DE', { minimumFractionDigits:2, maximumFractionDigits:2 })
+}
+
+function todayLabel(){
+  return new Date().toLocaleDateString('de-DE', { weekday:'long', day:'2-digit', month:'2-digit', year:'numeric' })
+}
+
+function recordPrice(r){
+  // r.job_types ve r.regiestunde beklenir
+  const base = r.job_types.is_variable_price ? (r.custom_price || 0) : (r.job_types.price_eur || 0)
+  return base + (r.regiestunde||0) * REGIESTUNDE_RATE
+}
+
 async function loadStaticData(){
   const { data: emp } = await supabase.from('employees').select('*').eq('active', true).order('name')
-  const { data: jt } = await supabase.from('job_types').select('*').eq('active', true).order('code')
+  const { data: jt } = await supabase.from('job_types').select('*').eq('active', true).order('sort_order')
   employees = emp || []
   jobTypes = jt || []
 }
@@ -336,32 +159,22 @@ function renderEmployeeSelect(){
   `
   document.getElementById('empSelect').addEventListener('change', async (e)=>{
     selectedEmployeeId = e.target.value
-    if(selectedEmployeeId){
-      await checkActiveJob()
-    }
+    if(selectedEmployeeId){ renderEmployeeDay() }
   })
 }
 
-async function checkActiveJob(){
-  const { data } = await supabase
-    .from('records')
-    .select('*, job_types(code, name, standard_minutes)')
-    .eq('employee_id', selectedEmployeeId)
-    .is('end_time', null)
-    .order('start_time', { ascending: false })
-    .limit(1)
+async function renderEmployeeDay(){
+  main.innerHTML = `<div class="empty">Yükleniyor...</div>`
 
-  activeRecord = (data && data[0]) || null
-  if(activeRecord){
-    renderActiveJob()
-  } else {
-    renderNewJobForm()
-  }
-}
+  const [hoursRes, recordsRes] = await Promise.all([
+    supabase.from('daily_hours').select('*').eq('employee_id', selectedEmployeeId).eq('work_date', new Date().toISOString().slice(0,10)).maybeSingle(),
+    supabase.from('records').select('*, job_types(code, name, is_aufbereitung, is_mts, is_variable_price)').eq('employee_id', selectedEmployeeId).gte('created_at', todayRange()).order('created_at', { ascending: false })
+  ])
 
-function renderNewJobForm(){
-  const emp = employees.find(e=>e.id===selectedEmployeeId)
-  selectedJobTypeId = null
+  const savedHours = hoursRes.data?.hours ?? null
+  const savedBranch = hoursRes.data?.branch ?? null
+  const todaysRecords = recordsRes.data || []
+
   main.innerHTML = `
     <div class="card">
       <label>Çalışan</label>
@@ -369,98 +182,160 @@ function renderNewJobForm(){
         ${employees.map(e => `<option value="${e.id}" ${e.id===selectedEmployeeId?'selected':''}>${e.name} (${e.akt_no})</option>`).join('')}
       </select>
     </div>
+
     <div class="card">
-      <label>İş tipi seç</label>
-      <div class="job-grid" id="jobGrid">
+      <label>Bugün toplam kaç saat çalıştın (molasız)?</label>
+      ${savedHours !== null ? `
+        <div class="hours-saved">✓ Kaydedildi: ${savedHours} saat · ${savedBranch || 'filyal belirtilmedi'}</div>
+        <button class="secondary" id="editHoursBtn" style="margin-top:10px;">Değiştir</button>
+      ` : `
+        <div class="hours-row" style="margin-bottom:14px;">
+          <input type="number" id="hoursInput" placeholder="Örn. 8.5" step="0.5" min="0" max="16">
+        </div>
+        <label>Bugün hangi filyalde çalıştın?</label>
+        <div class="job-list" id="branchList" style="margin-bottom:14px;">
+          ${BRANCHES.map(b => `<div class="job-btn branch-btn" data-branch="${b}"><span class="code">${b}</span></div>`).join('')}
+        </div>
+        <button class="primary" id="saveHoursBtn" disabled>Kaydet</button>
+      `}
+    </div>
+
+    <div class="card">
+      <label>Yeni iş ekle</label>
+      <div class="job-list" id="jobList">
         ${jobTypes.map(j => `
           <div class="job-btn" data-id="${j.id}">
-            <span class="code">${j.code}</span>
-            <span class="std">${j.standard_minutes} dk standart</span>
+            <span class="code">${j.code}${j.is_mts ? '<span class=\"mts-tag\">MTS</span>' : ''}</span>
           </div>`).join('')}
       </div>
-      <label>İş numarası</label>
-      <input type="text" id="jobNo" placeholder="Örn. 48213" inputmode="numeric">
-      <button class="primary" id="startBtn" disabled>İşi Başlat</button>
+      <label>AKT numarası veya Şasi (Fahrgestell) numarası</label>
+      <input type="text" id="refNo" placeholder="Örn. AKT121212 veya WVW...">
+      <div id="priceWrap" style="display:none;">
+        <label>Fiyat (€)</label>
+        <input type="number" id="customPrice" placeholder="Örn. 75" step="0.01" min="0">
+      </div>
+      <div id="regiestundeWrap" style="display:none;">
+        <label>Regiestunde Aufbereitung (varsa, saat)</label>
+        <select id="regiestunde">
+          <option value="">Yok</option>
+          ${Array.from({length:10},(_,i)=>i+1).map(n=>`<option value="${n}">${n} saat</option>`).join('')}
+        </select>
+      </div>
+      <button class="primary" id="addBtn" disabled>İşi Ekle</button>
+    </div>
+
+    <div class="card">
+      <label>${todayLabel()} — Bugün girdiklerin (${todaysRecords.length})</label>
+      <div class="entry-list" id="entryList">
+        ${todaysRecords.length === 0 ? '<div class="empty">Henüz iş eklenmedi</div>' : todaysRecords.map(r => `
+          <div class="entry">
+            <div><span class="code">${r.job_types.code}</span><span class="ref">${r.ref_no}</span></div>
+            <div>${r.regiestunde ? `<span class="extra">+${r.regiestunde} Std</span>` : ''}</div>
+          </div>
+        `).join('')}
+      </div>
     </div>
   `
+
   document.getElementById('empSelect2').addEventListener('change', (e)=>{
     selectedEmployeeId = e.target.value
-    checkActiveJob()
+    renderEmployeeDay()
   })
+
+  let pickedBranch = null
+
+  if(savedHours !== null){
+    document.getElementById('editHoursBtn').addEventListener('click', async ()=>{
+      const val = prompt('Bugün kaç saat çalıştın (molasız)?', savedHours)
+      if(val === null) return
+      const num = parseFloat(val.replace(',','.'))
+      if(isNaN(num)) { showToast('Geçersiz sayı'); return }
+      const br = prompt('Hangi filyalde? (Audi / Horn / Wiesendamm)', savedBranch || '')
+      await saveHours(num, br || savedBranch)
+    })
+  } else {
+    document.querySelectorAll('.branch-btn').forEach(btn=>{
+      btn.addEventListener('click', ()=>{
+        document.querySelectorAll('.branch-btn').forEach(b=>b.classList.remove('selected'))
+        btn.classList.add('selected')
+        pickedBranch = btn.dataset.branch
+        validateHoursSave()
+      })
+    })
+    document.getElementById('hoursInput').addEventListener('input', validateHoursSave)
+    document.getElementById('saveHoursBtn').addEventListener('click', async ()=>{
+      const val = document.getElementById('hoursInput').value
+      const num = parseFloat(val)
+      if(isNaN(num) || num <= 0){ showToast('Geçerli bir saat gir'); return }
+      if(!pickedBranch){ showToast('Filyal seç'); return }
+      await saveHours(num, pickedBranch)
+    })
+  }
+
+  function validateHoursSave(){
+    const val = document.getElementById('hoursInput')?.value
+    const btn = document.getElementById('saveHoursBtn')
+    if(btn) btn.disabled = !(val && parseFloat(val) > 0 && pickedBranch)
+  }
+
   document.querySelectorAll('.job-btn').forEach(btn=>{
     btn.addEventListener('click', ()=>{
       document.querySelectorAll('.job-btn').forEach(b=>b.classList.remove('selected'))
       btn.classList.add('selected')
-      selectedJobTypeId = btn.dataset.id
-      validateStart()
+      selectedJobType = jobTypes.find(j => j.id === btn.dataset.id)
+      document.getElementById('regiestundeWrap').style.display = selectedJobType.is_aufbereitung ? 'block' : 'none'
+      document.getElementById('priceWrap').style.display = selectedJobType.is_variable_price ? 'block' : 'none'
+      if(!selectedJobType.is_aufbereitung) document.getElementById('regiestunde').value = ''
+      validateAdd()
     })
   })
-  document.getElementById('jobNo').addEventListener('input', validateStart)
-  document.getElementById('startBtn').addEventListener('click', startJob)
+  document.getElementById('refNo').addEventListener('input', validateAdd)
+  document.getElementById('customPrice').addEventListener('input', validateAdd)
+  document.getElementById('addBtn').addEventListener('click', addRecord)
 }
 
-function validateStart(){
-  const jobNo = document.getElementById('jobNo').value.trim()
-  document.getElementById('startBtn').disabled = !(selectedJobTypeId && jobNo)
-}
-
-async function startJob(){
-  const jobNo = document.getElementById('jobNo').value.trim()
-  const { data, error } = await supabase.from('records').insert({
+async function saveHours(num, branch){
+  const { error } = await supabase.from('daily_hours').upsert({
     employee_id: selectedEmployeeId,
-    job_type_id: selectedJobTypeId,
-    job_no: jobNo,
-    start_time: new Date().toISOString()
-  }).select().single()
-
+    work_date: new Date().toISOString().slice(0,10),
+    hours: num,
+    branch: branch
+  }, { onConflict: 'employee_id,work_date' })
   if(error){ showToast('Hata: ' + error.message); return }
-  showToast('İş başlatıldı')
-  await checkActiveJob()
+  showToast('Kaydedildi')
+  renderEmployeeDay()
 }
 
-function renderActiveJob(){
-  if(timerInterval) clearInterval(timerInterval)
-  const jt = activeRecord.job_types
-  main.innerHTML = `
-    <div class="card active-job">
-      <p class="meta">Devam eden iş</p>
-      <span class="code">${jt.code} · #${activeRecord.job_no}</span>
-      <p class="meta">Standart süre: ${jt.standard_minutes} dk</p>
-      <div class="timer" id="timerDisplay">00:00</div>
-      <button class="primary danger" id="finishBtn">İşi Bitir</button>
-    </div>
-  `
-  const startedAt = new Date(activeRecord.start_time).getTime()
-  function tick(){
-    const diffSec = Math.floor((Date.now() - startedAt)/1000)
-    const m = String(Math.floor(diffSec/60)).padStart(2,'0')
-    const s = String(diffSec%60).padStart(2,'0')
-    const el = document.getElementById('timerDisplay')
-    if(el) el.textContent = `${m}:${s}`
+function validateAdd(){
+  const refNo = document.getElementById('refNo').value.trim()
+  let ok = selectedJobType && refNo
+  if(selectedJobType && selectedJobType.is_variable_price){
+    const priceVal = document.getElementById('customPrice').value
+    ok = ok && priceVal && parseFloat(priceVal) > 0
   }
-  tick()
-  timerInterval = setInterval(tick, 1000)
-  document.getElementById('finishBtn').addEventListener('click', finishJob)
+  document.getElementById('addBtn').disabled = !ok
 }
 
-async function finishJob(){
-  if(timerInterval) clearInterval(timerInterval)
-  const endTime = new Date()
-  const startTime = new Date(activeRecord.start_time)
-  const durationMinutes = Math.round((endTime - startTime)/60000)
-  const std = activeRecord.job_types.standard_minutes
-  const diffMinutes = durationMinutes - std
+async function addRecord(){
+  const refNo = document.getElementById('refNo').value.trim()
+  const regVal = document.getElementById('regiestunde').value
+  const priceVal = document.getElementById('customPrice').value
 
-  const { error } = await supabase.from('records').update({
-    end_time: endTime.toISOString(),
-    duration_minutes: durationMinutes,
-    diff_minutes: diffMinutes
-  }).eq('id', activeRecord.id)
+  const payload = {
+    employee_id: selectedEmployeeId,
+    job_type_id: selectedJobType.id,
+    ref_no: refNo,
+    regiestunde: regVal ? parseInt(regVal) : null
+  }
+  if(selectedJobType.is_variable_price){
+    payload.custom_price = parseFloat(priceVal)
+  }
 
+  const { error } = await supabase.from('records').insert(payload)
   if(error){ showToast('Hata: ' + error.message); return }
-  showToast(`İş bitti: ${durationMinutes} dk (standart ${std} dk)`)
-  activeRecord = null
-  renderNewJobForm()
+  showToast('İş eklendi')
+  selectedJobType = null
+  renderEmployeeDay()
 }
 
 // ============ ŞEF PANELİ ============
@@ -475,96 +350,130 @@ function renderBossPin(){
     </div>
   `
   document.getElementById('pinBtn').addEventListener('click', ()=>{
-    const val = document.getElementById('pinInput').value
-    if(val === BOSS_PIN){
+    if(document.getElementById('pinInput').value === BOSS_PIN){
       bossUnlocked = true
       renderBossDashboard()
-    } else {
-      showToast('Yanlış PIN')
-    }
+    } else { showToast('Yanlış PIN') }
   })
 }
 
 async function renderBossDashboard(){
   main.innerHTML = `<div class="empty">Yükleniyor...</div>`
 
-  const todayStart = new Date()
-  todayStart.setHours(0,0,0,0)
+  const [recordsRes, hoursRes] = await Promise.all([
+    supabase.from('records').select('*, employees(name, akt_no), job_types(code, name, duration_minutes, price_eur, is_mts, is_variable_price)').gte('created_at', todayRange()).order('created_at', { ascending: false }),
+    supabase.from('daily_hours').select('*, employees(name, akt_no)').eq('work_date', new Date().toISOString().slice(0,10))
+  ])
 
-  const { data: records, error } = await supabase
-    .from('records')
-    .select('*, employees(name, akt_no), job_types(code, name, standard_minutes)')
-    .not('end_time', 'is', null)
-    .gte('start_time', todayStart.toISOString())
-    .order('end_time', { ascending: false })
+  const records = recordsRes.data || []
+  const hours = hoursRes.data || []
 
-  if(error){
-    main.innerHTML = `<div class="empty">Veri alınamadı: ${error.message}</div>`
-    return
-  }
-
-  if(!records || records.length === 0){
+  if(records.length === 0){
     main.innerHTML = `
       <button class="refresh" id="refreshBtn">↻ Yenile</button>
-      <div class="empty">
-        <p class="big">Bugün henüz tamamlanmış iş yok</p>
-        <p>Çalışanlar iş bitirdikçe burada görünecek.</p>
-      </div>`
+      <div class="empty"><p class="big">Bugün henüz iş girilmedi</p></div>`
     document.getElementById('refreshBtn').addEventListener('click', renderBossDashboard)
     return
   }
 
-  // Çalışan bazında özet
+  let normalRevenue = 0, mtsRevenue = 0
+  records.forEach(r=>{
+    const price = recordPrice(r)
+    if(r.job_types.is_mts) mtsRevenue += price
+    else normalRevenue += price
+  })
+  const totalRevenue = normalRevenue + mtsRevenue
+
+  const hoursMap = {}
+  const branchMap = {}
+  hours.forEach(h => { hoursMap[h.employees.akt_no] = h.hours; branchMap[h.employees.akt_no] = h.branch })
+
+  const branchRevenue = {}
+  BRANCHES.forEach(b => branchRevenue[b] = 0)
+  let unassigned = 0
+  records.forEach(r=>{
+    const branch = branchMap[r.employees.akt_no]
+    if(branch && branchRevenue[branch] !== undefined){
+      branchRevenue[branch] += recordPrice(r)
+    } else {
+      unassigned += recordPrice(r)
+    }
+  })
+
   const summary = {}
   records.forEach(r=>{
     const key = r.employees.akt_no
-    if(!summary[key]){
-      summary[key] = { name: r.employees.name, akt_no: key, count:0, totalStd:0, totalDur:0 }
-    }
+    if(!summary[key]) summary[key] = { name: r.employees.name, akt_no: key, count:0, revenue:0, workedMinutes:0 }
     summary[key].count += 1
-    summary[key].totalStd += r.job_types.standard_minutes
-    summary[key].totalDur += r.duration_minutes
+    summary[key].revenue += recordPrice(r)
+    summary[key].workedMinutes += r.job_types.duration_minutes + (r.regiestunde||0)*60
   })
 
-  const summaryHtml = Object.values(summary).sort((a,b)=> (b.totalDur-b.totalStd) - (a.totalDur-a.totalStd)).map(s=>{
-    const diff = s.totalDur - s.totalStd
-    const diffClass = diff > 0 ? 'diff-pos' : 'diff-neg'
-    const diffLabel = diff > 0 ? `+${diff} dk ekstra` : `${diff} dk (erken)`
+  const summaryHtml = Object.values(summary).sort((a,b)=>b.revenue-a.revenue).map(s=>{
+    const declaredHours = hoursMap[s.akt_no]
+    const declaredMinutes = declaredHours !== undefined ? declaredHours * 60 : null
+    const capPct = declaredMinutes ? Math.round((s.workedMinutes / declaredMinutes) * 100) : null
     return `
       <div class="summary-row">
-        <div>
-          <div class="name">${s.name}</div>
-          <div style="color:var(--ink-dim);font-size:12px;">${s.akt_no}</div>
+        <div class="top-row">
+          <div>
+            <div class="name">${s.name}</div>
+            <div class="sub">${s.akt_no} · ${declaredHours !== undefined ? declaredHours + ' saat · ' + (branchMap[s.akt_no] || '-') : 'saat girilmedi'}</div>
+          </div>
+          <div class="stat">
+            <span class="n">${fmtEur(s.revenue)}</span>
+            <span class="label">${s.count} iş</span>
+          </div>
         </div>
-        <div class="stat">
-          <span class="n">${s.count} iş</span>
-          <span class="label ${diffClass}">${diffLabel}</span>
-        </div>
+        ${capPct !== null ? `
+          <div class="cap-bar"><div class="cap-fill ${capPct>100?'over':''}" style="width:${Math.min(capPct,100)}%;"></div></div>
+          <div class="sub" style="margin-top:4px;">Kapasite: %${capPct} (${Math.round(s.workedMinutes)} dk iş / ${declaredMinutes} dk mesai)</div>
+        ` : ''}
       </div>`
   }).join('')
 
-  const rowsHtml = records.map(r=>{
-    const diffClass = r.diff_minutes > 0 ? 'diff-pos' : 'diff-neg'
-    const diffLabel = r.diff_minutes > 0 ? `+${r.diff_minutes}` : `${r.diff_minutes}`
-    return `
-      <tr>
-        <td>${r.employees.name}</td>
-        <td>${r.job_types.code} #${r.job_no}</td>
-        <td>${r.duration_minutes} dk</td>
-        <td class="${diffClass}">${diffLabel} dk</td>
-      </tr>`
-  }).join('')
+  const rowsHtml = records.map(r => `
+    <tr>
+      <td>${r.employees.name}</td>
+      <td>${r.job_types.code}${r.job_types.is_mts ? ' (MTS)' : ''}</td>
+      <td>${r.ref_no}</td>
+      <td>${fmtEur(recordPrice(r))}</td>
+    </tr>`).join('')
 
   main.innerHTML = `
     <button class="refresh" id="refreshBtn">↻ Yenile</button>
     <div class="card">
-      <label>Bugünkü özet (çalışan bazında)</label>
+      <div class="revenue-total">${fmtEur(totalRevenue)}</div>
+      <div class="revenue-split">
+        <div class="revenue-box">
+          <div class="amount">${fmtEur(normalRevenue)}</div>
+          <div class="sub">Normal işler</div>
+        </div>
+        <div class="revenue-box mts">
+          <div class="amount">${fmtEur(mtsRevenue)}</div>
+          <div class="sub">MTS işleri</div>
+        </div>
+      </div>
+    </div>
+    <div class="card">
+      <label>Filyal bazlı ciro</label>
+      <div class="revenue-split" style="flex-wrap:wrap;">
+        ${BRANCHES.map(b => `
+          <div class="revenue-box" style="min-width:30%;">
+            <div class="amount" style="color:var(--ink);font-size:16px;">${fmtEur(branchRevenue[b])}</div>
+            <div class="sub">${b}</div>
+          </div>`).join('')}
+      </div>
+      ${unassigned > 0 ? `<div class="sub" style="margin-top:10px;text-align:center;">Filyal belirtilmemiş: ${fmtEur(unassigned)}</div>` : ''}
+    </div>
+    <div class="card">
+      <label>Çalışan bazında özet</label>
       ${summaryHtml}
     </div>
     <div class="card">
-      <label>Tüm kayıtlar</label>
+      <label>Tüm kayıtlar (${records.length})</label>
       <table>
-        <thead><tr><th>Çalışan</th><th>İş</th><th>Süre</th><th>Fark</th></tr></thead>
+        <thead><tr><th>Çalışan</th><th>İş</th><th>No</th><th>Tutar</th></tr></thead>
         <tbody>${rowsHtml}</tbody>
       </table>
     </div>
@@ -575,23 +484,16 @@ async function renderBossDashboard(){
 // ============ TAB YÖNETİMİ ============
 
 tabEmployee.addEventListener('click', ()=>{
-  currentTab = 'employee'
-  tabEmployee.classList.add('active')
-  tabBoss.classList.remove('active')
+  tabEmployee.classList.add('active'); tabBoss.classList.remove('active')
   headerTitle.textContent = 'Çalışan Girişi'
-  if(selectedEmployeeId){ checkActiveJob() } else { renderEmployeeSelect() }
+  if(selectedEmployeeId){ renderEmployeeDay() } else { renderEmployeeSelect() }
 })
 
 tabBoss.addEventListener('click', ()=>{
-  currentTab = 'boss'
-  tabBoss.classList.add('active')
-  tabEmployee.classList.remove('active')
+  tabBoss.classList.add('active'); tabEmployee.classList.remove('active')
   headerTitle.textContent = 'Şef Paneli'
-  if(timerInterval) clearInterval(timerInterval)
   if(bossUnlocked){ renderBossDashboard() } else { renderBossPin() }
 })
-
-// ============ BAŞLAT ============
 
 async function init(){
   main.innerHTML = `<div class="empty">Yükleniyor...</div>`
