@@ -82,6 +82,7 @@
   .revenue-box.mts .amount{ color:var(--blue); }
   .revenue-box.privat .amount{ color:var(--purple); }
   .revenue-box .sub{ font-size:10px; color:var(--ink-dim); text-transform:uppercase; letter-spacing:.04em; margin-top:4px; }
+  .revenue-box .net{ font-size:10px; color:var(--ink-dim); margin-top:2px; }
   .revenue-total{ text-align:center; padding:6px 0 14px; font-family:'JetBrains Mono',monospace; font-size:26px; font-weight:700; }
   .range-chips{ display:flex; gap:8px; margin-bottom:14px; flex-wrap:wrap; }
   .range-chip{ background:var(--steel-2); border:1px solid var(--line); color:var(--ink-dim); font-size:12px; font-weight:600; padding:8px 12px; border-radius:20px; cursor:pointer; }
@@ -133,6 +134,7 @@ const supabase = createClient(SUPABASE_URL, SUPABASE_KEY)
 const BOSS_PIN = "1234"
 const REGIESTUNDE_RATE = 33.28
 const BRANCHES = ['Audi', 'Horn', 'Wiesendamm']
+const SR_DELLE_PERFORMERS = ['Delltom', 'Hesam', 'M']
 const SESSION_KEY = 'wt_employee_id'
 
 const main = document.getElementById('main')
@@ -385,6 +387,13 @@ async function renderEmployeeDay(){
           ${Array.from({length:10},(_,i)=>i+1).map(n=>`<option value="${n}">${n} Std</option>`).join('')}
         </select>
       </div>
+      <div id="performerWrap" style="display:none;">
+        <label>Wer hat die Arbeit ausgeführt?</label>
+        <select id="performerSelect">
+          <option value="">Auswählen...</option>
+          ${SR_DELLE_PERFORMERS.map(p => `<option value="${p}">${p}</option>`).join('')}
+        </select>
+      </div>
       <button class="primary" id="addBtn" disabled>Auftrag hinzufügen</button>
     </div>
 
@@ -393,7 +402,7 @@ async function renderEmployeeDay(){
       <div class="entry-list" id="entryList">
         ${todaysRecords.length === 0 ? '<div class="empty">Noch keine Einträge</div>' : todaysRecords.map(r => `
           <div class="entry">
-            <div><span class="code">${r.job_types.code}</span><span class="ref">${r.ref_no || ''}</span></div>
+            <div><span class="code">${r.job_types.code}</span><span class="ref">${r.ref_no || ''}${r.performed_by ? ' · ' + r.performed_by : ''}</span></div>
             <div class="right">
               ${r.regiestunde ? `<span class="extra">+${r.regiestunde} Std</span>` : ''}
               <button class="del-btn" data-del="${r.id}" title="Löschen">×</button>
@@ -447,7 +456,9 @@ async function renderEmployeeDay(){
       selectedJobType = jobTypes.find(j => j.id === btn.dataset.id)
       document.getElementById('regiestundeWrap').style.display = selectedJobType.is_aufbereitung ? 'block' : 'none'
       document.getElementById('priceWrap').style.display = selectedJobType.is_variable_price ? 'block' : 'none'
+      document.getElementById('performerWrap').style.display = selectedJobType.code === 'SR-Delle' ? 'block' : 'none'
       if(!selectedJobType.is_aufbereitung) document.getElementById('regiestunde').value = ''
+      if(selectedJobType.code !== 'SR-Delle') document.getElementById('performerSelect').value = ''
       validateAdd()
     })
   })
@@ -469,6 +480,7 @@ async function renderEmployeeDay(){
   })
   document.getElementById('refNo').addEventListener('input', validateAdd)
   document.getElementById('customPrice').addEventListener('input', validateAdd)
+  document.getElementById('performerSelect').addEventListener('change', validateAdd)
   document.getElementById('addBtn').addEventListener('click', addRecord)
 }
 
@@ -491,6 +503,9 @@ function validateAdd(){
     const priceVal = document.getElementById('customPrice').value
     ok = ok && priceVal && parseFloat(priceVal) > 0
   }
+  if(selectedJobType && selectedJobType.code === 'SR-Delle'){
+    ok = ok && document.getElementById('performerSelect').value
+  }
   document.getElementById('addBtn').disabled = !ok
 }
 
@@ -498,6 +513,7 @@ async function addRecord(){
   const refNo = document.getElementById('refNo').value.trim()
   const regVal = document.getElementById('regiestunde').value
   const priceVal = document.getElementById('customPrice').value
+  const performerVal = document.getElementById('performerSelect').value
 
   const payload = {
     employee_id: currentEmployee.id,
@@ -507,6 +523,9 @@ async function addRecord(){
   }
   if(selectedJobType.is_variable_price){
     payload.custom_price = parseFloat(priceVal)
+  }
+  if(selectedJobType.code === 'SR-Delle'){
+    payload.performed_by = performerVal
   }
 
   const { error } = await supabase.from('records').insert(payload)
@@ -674,7 +693,7 @@ async function renderBossDashboard(){
   const rowsHtml = records.map(r => `
     <tr>
       <td>${r.employees.name}</td>
-      <td>${r.job_types.code}${r.job_types.is_mts ? ' (MTS)' : ''}</td>
+      <td>${r.job_types.code}${r.job_types.is_mts ? ' (MTS)' : ''}${r.performed_by ? ' · ' + r.performed_by : ''}</td>
       <td>${r.ref_no || '-'}</td>
       <td>${fmtEur(recordPrice(r))}</td>
     </tr>`).join('')
@@ -687,6 +706,7 @@ async function renderBossDashboard(){
       <div class="revenue-split">
         <div class="revenue-box">
           <div class="amount">${fmtEur(normalRevenue)}</div>
+          <div class="net">Netto (75%): ${fmtEur(normalRevenue * 0.75)}</div>
           <div class="sub">Normal</div>
         </div>
         <div class="revenue-box mts">
