@@ -1,24 +1,25 @@
 <!DOCTYPE html>
-<html lang="tr">
+<html lang="de">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
-<title>Atölye İş Takip</title>
+<title>Werkstatt Auftragserfassung</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@600;700&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@500;700&display=swap" rel="stylesheet">
 <style>
   :root{
     --graphite:#1B1E21; --steel:#26292D; --steel-2:#2F3338;
-    --amber:#F5A623; --green:#4CAF6D; --red:#E4572E; --blue:#5B9BD5;
+    --amber:#F5A623; --green:#4CAF6D; --red:#E4572E; --blue:#5B9BD5; --purple:#9B7EDE;
     --ink:#ECEDEE; --ink-dim:#9AA0A6; --line:#3A3F44;
   }
   *{box-sizing:border-box;}
   html,body{margin:0;padding:0;}
   body{ background:var(--graphite); color:var(--ink); font-family:'Inter',sans-serif; min-height:100vh; -webkit-tap-highlight-color:transparent; }
   .app{ max-width:520px; margin:0 auto; min-height:100vh; display:flex; flex-direction:column; }
-  header{ padding:20px 20px 14px; border-bottom:1px solid var(--line); }
+  header{ padding:20px 20px 14px; border-bottom:1px solid var(--line); display:flex; justify-content:space-between; align-items:flex-start; }
   header .eyebrow{ font-family:'JetBrains Mono',monospace; font-size:11px; letter-spacing:.12em; text-transform:uppercase; color:var(--amber); margin:0 0 4px; }
   h1{ font-family:'Barlow Condensed',sans-serif; font-weight:700; font-size:28px; margin:0; line-height:1; }
+  .logout-btn{ background:none; border:1px solid var(--line); color:var(--ink-dim); font-size:11px; padding:6px 10px; border-radius:6px; cursor:pointer; white-space:nowrap; margin-top:4px; }
   nav{ display:flex; border-bottom:1px solid var(--line); }
   nav button{ flex:1; background:none; border:none; color:var(--ink-dim); font-weight:600; font-size:14px; padding:14px 8px; cursor:pointer; border-bottom:2px solid transparent; }
   nav button.active{ color:var(--amber); border-bottom-color:var(--amber); }
@@ -37,6 +38,9 @@
   .job-btn.selected{ border-color:var(--amber); background:rgba(245,166,35,0.12); }
   .job-btn.selected .code{ color:var(--amber); }
   .mts-tag{ font-size:9px; background:rgba(91,155,213,0.18); color:var(--blue); padding:2px 6px; border-radius:10px; margin-left:6px; }
+  .qty-tag{ font-size:9px; background:rgba(155,126,222,0.18); color:var(--purple); padding:2px 6px; border-radius:10px; margin-left:6px; }
+  .job-btn .qty-add{ background:var(--amber); color:#1B1E21; border:none; font-weight:700; font-size:13px; padding:8px 14px; border-radius:6px; cursor:pointer; }
+  .job-btn .qty-count{ font-family:'JetBrains Mono',monospace; font-size:12px; color:var(--ink-dim); margin-right:8px; }
   button.primary{ width:100%; background:var(--amber); color:#1B1E21; border:none; font-weight:700; font-size:16px; padding:16px; border-radius:8px; cursor:pointer; }
   button.primary:disabled{ background:var(--steel-2); color:var(--ink-dim); cursor:not-allowed; }
   button.secondary{ width:100%; background:var(--steel-2); color:var(--ink); border:1px solid var(--line); font-weight:600; font-size:14px; padding:12px; border-radius:8px; cursor:pointer; }
@@ -48,6 +52,8 @@
   .entry .code{ font-family:'JetBrains Mono',monospace; font-weight:700; color:var(--amber); margin-right:8px; }
   .entry .ref{ font-family:'JetBrains Mono',monospace; color:var(--ink); font-size:13px; }
   .entry .extra{ font-size:11px; background:rgba(228,87,46,0.15); color:var(--red); padding:3px 8px; border-radius:20px; font-family:'JetBrains Mono',monospace; margin-left:6px; }
+  .entry .right{ display:flex; align-items:center; gap:8px; }
+  .del-btn{ background:none; border:1px solid var(--line); color:var(--red); font-size:14px; width:28px; height:28px; border-radius:6px; cursor:pointer; line-height:1; }
   .empty{ text-align:center; color:var(--ink-dim); padding:30px 10px; }
   .empty .big{ font-family:'Barlow Condensed',sans-serif; font-size:20px; color:var(--ink); margin-bottom:6px; }
   .summary-row{ padding:12px 0; border-bottom:1px solid var(--line); }
@@ -66,25 +72,38 @@
   td{ padding:9px 4px; border-bottom:1px solid var(--line); font-family:'JetBrains Mono',monospace; }
   .pin-screen{ display:flex; flex-direction:column; align-items:center; justify-content:center; padding:60px 20px; text-align:center; }
   .pin-screen input{ max-width:160px; text-align:center; letter-spacing:.3em; font-family:'JetBrains Mono',monospace; font-size:20px; }
+  .login-screen{ display:flex; flex-direction:column; align-items:center; justify-content:center; padding:40px 20px; text-align:center; }
+  .login-screen .box{ width:100%; max-width:320px; }
   .toast{ position:fixed; bottom:20px; left:50%; transform:translateX(-50%); background:var(--steel-2); border:1px solid var(--amber); color:var(--ink); padding:12px 20px; border-radius:8px; font-size:14px; z-index:100; }
   .refresh{ background:none; border:1px solid var(--line); color:var(--ink-dim); font-size:12px; padding:8px 12px; border-radius:6px; cursor:pointer; margin-bottom:14px; }
-  .revenue-split{ display:flex; gap:12px; }
-  .revenue-box{ flex:1; text-align:center; padding:12px 6px; background:var(--steel-2); border-radius:8px; }
-  .revenue-box .amount{ font-family:'JetBrains Mono',monospace; font-size:20px; font-weight:700; color:var(--green); }
+  .revenue-split{ display:flex; gap:12px; flex-wrap:wrap; }
+  .revenue-box{ flex:1; min-width:30%; text-align:center; padding:12px 6px; background:var(--steel-2); border-radius:8px; }
+  .revenue-box .amount{ font-family:'JetBrains Mono',monospace; font-size:18px; font-weight:700; color:var(--green); }
   .revenue-box.mts .amount{ color:var(--blue); }
+  .revenue-box.privat .amount{ color:var(--purple); }
   .revenue-box .sub{ font-size:10px; color:var(--ink-dim); text-transform:uppercase; letter-spacing:.04em; margin-top:4px; }
   .revenue-total{ text-align:center; padding:6px 0 14px; font-family:'JetBrains Mono',monospace; font-size:26px; font-weight:700; }
+  .range-chips{ display:flex; gap:8px; margin-bottom:14px; flex-wrap:wrap; }
+  .range-chip{ background:var(--steel-2); border:1px solid var(--line); color:var(--ink-dim); font-size:12px; font-weight:600; padding:8px 12px; border-radius:20px; cursor:pointer; }
+  .range-chip.active{ background:rgba(245,166,35,0.15); border-color:var(--amber); color:var(--amber); }
+  .range-custom{ display:flex; gap:10px; }
+  .range-custom > div{ flex:1; }
+  .range-custom input{ margin-bottom:0; }
+  .search-wrap{ margin-top:10px; }
 </style>
 </head>
 <body>
 <div class="app">
   <header>
-    <p class="eyebrow">Atölye İş Takip</p>
-    <h1 id="headerTitle">Çalışan Girişi</h1>
+    <div>
+      <p class="eyebrow">Werkstatt Auftragserfassung</p>
+      <h1 id="headerTitle">Mitarbeiter</h1>
+    </div>
+    <button class="logout-btn" id="logoutBtn" style="display:none;">Abmelden</button>
   </header>
   <nav>
-    <button id="tabEmployee" class="active">Çalışan Girişi</button>
-    <button id="tabBoss">Şef Paneli</button>
+    <button id="tabEmployee" class="active">Mitarbeiter</button>
+    <button id="tabBoss">Chef</button>
   </nav>
   <main id="main"></main>
 </div>
@@ -99,17 +118,20 @@ const supabase = createClient(SUPABASE_URL, SUPABASE_KEY)
 const BOSS_PIN = "1234"
 const REGIESTUNDE_RATE = 33.28
 const BRANCHES = ['Audi', 'Horn', 'Wiesendamm']
+const SESSION_KEY = 'wt_employee_id'
 
 const main = document.getElementById('main')
 const headerTitle = document.getElementById('headerTitle')
 const tabEmployee = document.getElementById('tabEmployee')
 const tabBoss = document.getElementById('tabBoss')
+const logoutBtn = document.getElementById('logoutBtn')
 
 let bossUnlocked = false
 let employees = []
 let jobTypes = []
-let selectedEmployeeId = null
+let currentEmployee = null
 let selectedJobType = null
+let bossRange = { mode: 'today', start: null, end: null }
 
 function showToast(msg){
   const t = document.createElement('div')
@@ -119,13 +141,22 @@ function showToast(msg){
   setTimeout(()=> t.remove(), 2500)
 }
 
-function todayRange(){
-  const start = new Date(); start.setHours(0,0,0,0)
-  return start.toISOString()
+function todayStr(){
+  return new Date().toISOString().slice(0,10)
+}
+
+function startOfDayISO(dateStr){
+  return new Date(dateStr + 'T00:00:00').toISOString()
+}
+
+function endOfDayISO(dateStr){
+  const d = new Date(dateStr + 'T00:00:00')
+  d.setDate(d.getDate() + 1)
+  return d.toISOString()
 }
 
 function fmtEur(n){
-  return '€' + n.toLocaleString('de-DE', { minimumFractionDigits:2, maximumFractionDigits:2 })
+  return '€' + (n||0).toLocaleString('de-DE', { minimumFractionDigits:2, maximumFractionDigits:2 })
 }
 
 function todayLabel(){
@@ -133,9 +164,12 @@ function todayLabel(){
 }
 
 function recordPrice(r){
-  // r.job_types ve r.regiestunde beklenir
   const base = r.job_types.is_variable_price ? (r.custom_price || 0) : (r.job_types.price_eur || 0)
   return base + (r.regiestunde||0) * REGIESTUNDE_RATE
+}
+
+function updateLogoutBtn(){
+  logoutBtn.style.display = currentEmployee ? 'inline-block' : 'none'
 }
 
 async function loadStaticData(){
@@ -145,112 +179,147 @@ async function loadStaticData(){
   jobTypes = jt || []
 }
 
-// ============ ÇALIŞAN GİRİŞİ ============
+// ============ GİRİŞ (LOGIN) ============
 
-function renderEmployeeSelect(){
+function renderLogin(){
   main.innerHTML = `
-    <div class="card">
-      <label>Kendi adını / AKT numaranı seç</label>
-      <select id="empSelect">
-        <option value="">Seçiniz...</option>
-        ${employees.map(e => `<option value="${e.id}">${e.name} (${e.akt_no})</option>`).join('')}
-      </select>
+    <div class="login-screen">
+      <div class="box">
+        <p class="eyebrow" style="color:var(--ink-dim)">Anmeldung</p>
+        <h2 style="font-family:'Barlow Condensed',sans-serif;font-size:24px;margin:4px 0 20px;">Wer bist du?</h2>
+        <label>Name / AKT-Nummer</label>
+        <select id="loginEmpSelect">
+          <option value="">Auswählen...</option>
+          ${employees.map(e => `<option value="${e.id}">${e.name} (${e.akt_no})</option>`).join('')}
+        </select>
+        <label>Passwort</label>
+        <input type="password" id="loginPassword" placeholder="Passwort">
+        <button class="primary" id="loginBtn">Anmelden</button>
+      </div>
     </div>
   `
-  document.getElementById('empSelect').addEventListener('change', async (e)=>{
-    selectedEmployeeId = e.target.value
-    if(selectedEmployeeId){ renderEmployeeDay() }
+  document.getElementById('loginBtn').addEventListener('click', ()=>{
+    const empId = document.getElementById('loginEmpSelect').value
+    const pw = document.getElementById('loginPassword').value
+    const emp = employees.find(e => e.id === empId)
+    if(!emp){ showToast('Bitte Namen auswählen'); return }
+    if((emp.password || '') !== pw){ showToast('Falsches Passwort'); return }
+    currentEmployee = emp
+    localStorage.setItem(SESSION_KEY, emp.id)
+    updateLogoutBtn()
+    renderEmployeeDay()
   })
 }
 
-async function renderEmployeeDay(){
-  main.innerHTML = `<div class="empty">Yükleniyor...</div>`
+logoutBtn.addEventListener('click', ()=>{
+  currentEmployee = null
+  localStorage.removeItem(SESSION_KEY)
+  updateLogoutBtn()
+  renderLogin()
+})
 
+// ============ ÇALIŞAN GİRİŞİ (TAGESANSICHT) ============
+
+async function renderEmployeeDay(){
+  main.innerHTML = `<div class="empty">Lädt...</div>`
+
+  const today = todayStr()
   const [hoursRes, recordsRes] = await Promise.all([
-    supabase.from('daily_hours').select('*').eq('employee_id', selectedEmployeeId).eq('work_date', new Date().toISOString().slice(0,10)).maybeSingle(),
-    supabase.from('records').select('*, job_types(code, name, is_aufbereitung, is_mts, is_variable_price)').eq('employee_id', selectedEmployeeId).gte('created_at', todayRange()).order('created_at', { ascending: false })
+    supabase.from('daily_hours').select('*').eq('employee_id', currentEmployee.id).eq('work_date', today).maybeSingle(),
+    supabase.from('records').select('*, job_types(code, name, is_aufbereitung, is_mts, is_variable_price, is_quantity)').eq('employee_id', currentEmployee.id).gte('created_at', startOfDayISO(today)).lt('created_at', endOfDayISO(today)).order('created_at', { ascending: false })
   ])
 
   const savedHours = hoursRes.data?.hours ?? null
   const savedBranch = hoursRes.data?.branch ?? null
   const todaysRecords = recordsRes.data || []
 
+  const qtyCounts = {}
+  todaysRecords.forEach(r=>{ if(r.job_types.is_quantity) qtyCounts[r.job_type_id] = (qtyCounts[r.job_type_id]||0) + 1 })
+
   main.innerHTML = `
     <div class="card">
-      <label>Çalışan</label>
-      <select id="empSelect2">
-        ${employees.map(e => `<option value="${e.id}" ${e.id===selectedEmployeeId?'selected':''}>${e.name} (${e.akt_no})</option>`).join('')}
-      </select>
+      <label>Angemeldet als</label>
+      <div style="font-weight:600;font-size:16px;">${currentEmployee.name} (${currentEmployee.akt_no})</div>
     </div>
 
     <div class="card">
-      <label>Bugün toplam kaç saat çalıştın (molasız)?</label>
+      <label>Wie viele Stunden hast du heute gearbeitet (ohne Pause)?</label>
       ${savedHours !== null ? `
-        <div class="hours-saved">✓ Kaydedildi: ${savedHours} saat · ${savedBranch || 'filyal belirtilmedi'}</div>
-        <button class="secondary" id="editHoursBtn" style="margin-top:10px;">Değiştir</button>
+        <div class="hours-saved">✓ Gespeichert: ${savedHours} Std · ${savedBranch || 'keine Filiale angegeben'}</div>
+        <button class="secondary" id="editHoursBtn" style="margin-top:10px;">Ändern</button>
       ` : `
         <div class="hours-row" style="margin-bottom:14px;">
-          <input type="number" id="hoursInput" placeholder="Örn. 8.5" step="0.5" min="0" max="16">
+          <input type="number" id="hoursInput" placeholder="z.B. 8.5" step="0.5" min="0" max="16">
         </div>
-        <label>Bugün hangi filyalde çalıştın?</label>
+        <label>In welcher Filiale hast du heute gearbeitet?</label>
         <div class="job-list" id="branchList" style="margin-bottom:14px;">
           ${BRANCHES.map(b => `<div class="job-btn branch-btn" data-branch="${b}"><span class="code">${b}</span></div>`).join('')}
         </div>
-        <button class="primary" id="saveHoursBtn" disabled>Kaydet</button>
+        <button class="primary" id="saveHoursBtn" disabled>Speichern</button>
       `}
     </div>
 
     <div class="card">
-      <label>Yeni iş ekle</label>
+      <label>Neuen Auftrag hinzufügen</label>
       <div class="job-list" id="jobList">
-        ${jobTypes.map(j => `
+        ${jobTypes.map(j => {
+          if(j.is_quantity){
+            return `
+            <div class="job-btn" data-qty-id="${j.id}">
+              <span class="code">${j.code}<span class="qty-tag">+1</span></span>
+              <span style="display:flex;align-items:center;">
+                <span class="qty-count">${qtyCounts[j.id]||0}× heute</span>
+                <button type="button" class="qty-add" data-qty-add="${j.id}">+1</button>
+              </span>
+            </div>`
+          }
+          return `
           <div class="job-btn" data-id="${j.id}">
-            <span class="code">${j.code}${j.is_mts ? '<span class=\"mts-tag\">MTS</span>' : ''}</span>
-          </div>`).join('')}
+            <span class="code">${j.code}${j.is_mts ? '<span class="mts-tag">MTS</span>' : ''}</span>
+          </div>`
+        }).join('')}
       </div>
-      <label>AKT numarası veya Şasi (Fahrgestell) numarası</label>
-      <input type="text" id="refNo" placeholder="Örn. AKT121212 veya WVW...">
+      <label>AKT-Nummer oder Fahrgestellnummer</label>
+      <input type="text" id="refNo" placeholder="z.B. AKT121212 oder WVW...">
       <div id="priceWrap" style="display:none;">
-        <label>Fiyat (€)</label>
-        <input type="number" id="customPrice" placeholder="Örn. 75" step="0.01" min="0">
+        <label>Preis (€)</label>
+        <input type="number" id="customPrice" placeholder="z.B. 75" step="0.01" min="0">
       </div>
       <div id="regiestundeWrap" style="display:none;">
-        <label>Regiestunde Aufbereitung (varsa, saat)</label>
+        <label>Regiestunde Aufbereitung (falls zutreffend, Stunden)</label>
         <select id="regiestunde">
-          <option value="">Yok</option>
-          ${Array.from({length:10},(_,i)=>i+1).map(n=>`<option value="${n}">${n} saat</option>`).join('')}
+          <option value="">Keine</option>
+          ${Array.from({length:10},(_,i)=>i+1).map(n=>`<option value="${n}">${n} Std</option>`).join('')}
         </select>
       </div>
-      <button class="primary" id="addBtn" disabled>İşi Ekle</button>
+      <button class="primary" id="addBtn" disabled>Auftrag hinzufügen</button>
     </div>
 
     <div class="card">
-      <label>${todayLabel()} — Bugün girdiklerin (${todaysRecords.length})</label>
+      <label>${todayLabel()} — Deine heutigen Einträge (${todaysRecords.length})</label>
       <div class="entry-list" id="entryList">
-        ${todaysRecords.length === 0 ? '<div class="empty">Henüz iş eklenmedi</div>' : todaysRecords.map(r => `
+        ${todaysRecords.length === 0 ? '<div class="empty">Noch keine Einträge</div>' : todaysRecords.map(r => `
           <div class="entry">
-            <div><span class="code">${r.job_types.code}</span><span class="ref">${r.ref_no}</span></div>
-            <div>${r.regiestunde ? `<span class="extra">+${r.regiestunde} Std</span>` : ''}</div>
+            <div><span class="code">${r.job_types.code}</span><span class="ref">${r.ref_no || ''}</span></div>
+            <div class="right">
+              ${r.regiestunde ? `<span class="extra">+${r.regiestunde} Std</span>` : ''}
+              <button class="del-btn" data-del="${r.id}" title="Löschen">×</button>
+            </div>
           </div>
         `).join('')}
       </div>
     </div>
   `
 
-  document.getElementById('empSelect2').addEventListener('change', (e)=>{
-    selectedEmployeeId = e.target.value
-    renderEmployeeDay()
-  })
-
   let pickedBranch = null
 
   if(savedHours !== null){
     document.getElementById('editHoursBtn').addEventListener('click', async ()=>{
-      const val = prompt('Bugün kaç saat çalıştın (molasız)?', savedHours)
+      const val = prompt('Wie viele Stunden hast du heute gearbeitet (ohne Pause)?', savedHours)
       if(val === null) return
       const num = parseFloat(val.replace(',','.'))
-      if(isNaN(num)) { showToast('Geçersiz sayı'); return }
-      const br = prompt('Hangi filyalde? (Audi / Horn / Wiesendamm)', savedBranch || '')
+      if(isNaN(num)) { showToast('Ungültige Zahl'); return }
+      const br = prompt('Welche Filiale? (Audi / Horn / Wiesendamm)', savedBranch || '')
       await saveHours(num, br || savedBranch)
     })
   } else {
@@ -266,8 +335,8 @@ async function renderEmployeeDay(){
     document.getElementById('saveHoursBtn').addEventListener('click', async ()=>{
       const val = document.getElementById('hoursInput').value
       const num = parseFloat(val)
-      if(isNaN(num) || num <= 0){ showToast('Geçerli bir saat gir'); return }
-      if(!pickedBranch){ showToast('Filyal seç'); return }
+      if(isNaN(num) || num <= 0){ showToast('Bitte gültige Stundenzahl eingeben'); return }
+      if(!pickedBranch){ showToast('Bitte Filiale auswählen'); return }
       await saveHours(num, pickedBranch)
     })
   }
@@ -278,15 +347,31 @@ async function renderEmployeeDay(){
     if(btn) btn.disabled = !(val && parseFloat(val) > 0 && pickedBranch)
   }
 
-  document.querySelectorAll('.job-btn').forEach(btn=>{
+  document.querySelectorAll('.job-btn[data-id]').forEach(btn=>{
     btn.addEventListener('click', ()=>{
-      document.querySelectorAll('.job-btn').forEach(b=>b.classList.remove('selected'))
+      document.querySelectorAll('.job-btn[data-id]').forEach(b=>b.classList.remove('selected'))
       btn.classList.add('selected')
       selectedJobType = jobTypes.find(j => j.id === btn.dataset.id)
       document.getElementById('regiestundeWrap').style.display = selectedJobType.is_aufbereitung ? 'block' : 'none'
       document.getElementById('priceWrap').style.display = selectedJobType.is_variable_price ? 'block' : 'none'
       if(!selectedJobType.is_aufbereitung) document.getElementById('regiestunde').value = ''
       validateAdd()
+    })
+  })
+  document.querySelectorAll('[data-qty-add]').forEach(btn=>{
+    btn.addEventListener('click', async (e)=>{
+      e.stopPropagation()
+      const jobType = jobTypes.find(j => j.id === btn.dataset.qtyAdd)
+      await addQuantityRecord(jobType)
+    })
+  })
+  document.querySelectorAll('[data-del]').forEach(btn=>{
+    btn.addEventListener('click', async ()=>{
+      if(!confirm('Diesen Eintrag löschen?')) return
+      const { error } = await supabase.from('records').delete().eq('id', btn.dataset.del)
+      if(error){ showToast('Fehler: ' + error.message); return }
+      showToast('Gelöscht')
+      renderEmployeeDay()
     })
   })
   document.getElementById('refNo').addEventListener('input', validateAdd)
@@ -296,13 +381,13 @@ async function renderEmployeeDay(){
 
 async function saveHours(num, branch){
   const { error } = await supabase.from('daily_hours').upsert({
-    employee_id: selectedEmployeeId,
-    work_date: new Date().toISOString().slice(0,10),
+    employee_id: currentEmployee.id,
+    work_date: todayStr(),
     hours: num,
     branch: branch
   }, { onConflict: 'employee_id,work_date' })
-  if(error){ showToast('Hata: ' + error.message); return }
-  showToast('Kaydedildi')
+  if(error){ showToast('Fehler: ' + error.message); return }
+  showToast('Gespeichert')
   renderEmployeeDay()
 }
 
@@ -322,7 +407,7 @@ async function addRecord(){
   const priceVal = document.getElementById('customPrice').value
 
   const payload = {
-    employee_id: selectedEmployeeId,
+    employee_id: currentEmployee.id,
     job_type_id: selectedJobType.id,
     ref_no: refNo,
     regiestunde: regVal ? parseInt(regVal) : null
@@ -332,61 +417,122 @@ async function addRecord(){
   }
 
   const { error } = await supabase.from('records').insert(payload)
-  if(error){ showToast('Hata: ' + error.message); return }
-  showToast('İş eklendi')
+  if(error){ showToast('Fehler: ' + error.message); return }
+  showToast('Auftrag hinzugefügt')
   selectedJobType = null
   renderEmployeeDay()
 }
 
-// ============ ŞEF PANELİ ============
+async function addQuantityRecord(jobType){
+  const { error } = await supabase.from('records').insert({
+    employee_id: currentEmployee.id,
+    job_type_id: jobType.id,
+    ref_no: null,
+    regiestunde: null
+  })
+  if(error){ showToast('Fehler: ' + error.message); return }
+  showToast(jobType.code + ' +1')
+  renderEmployeeDay()
+}
+
+// ============ ŞEF PANELİ (CHEF-BEREICH) ============
 
 function renderBossPin(){
   main.innerHTML = `
     <div class="pin-screen">
-      <p class="eyebrow" style="color:var(--ink-dim)">Yetkili girişi</p>
-      <h2 style="font-family:'Barlow Condensed',sans-serif;font-size:24px;margin:4px 0 20px;">PIN gir</h2>
+      <p class="eyebrow" style="color:var(--ink-dim)">Chef-Zugang</p>
+      <h2 style="font-family:'Barlow Condensed',sans-serif;font-size:24px;margin:4px 0 20px;">PIN eingeben</h2>
       <input type="password" id="pinInput" maxlength="4" inputmode="numeric" placeholder="••••">
-      <button class="primary" id="pinBtn" style="max-width:160px;">Giriş</button>
+      <button class="primary" id="pinBtn" style="max-width:160px;">Anmelden</button>
     </div>
   `
   document.getElementById('pinBtn').addEventListener('click', ()=>{
     if(document.getElementById('pinInput').value === BOSS_PIN){
       bossUnlocked = true
+      bossRange = { mode: 'today', start: null, end: null }
       renderBossDashboard()
-    } else { showToast('Yanlış PIN') }
+    } else { showToast('Falsche PIN') }
   })
 }
 
-async function renderBossDashboard(){
-  main.innerHTML = `<div class="empty">Yükleniyor...</div>`
+function currentRangeDates(){
+  const today = todayStr()
+  if(bossRange.mode === 'today') return { start: today, end: today }
+  if(bossRange.mode === 'week'){
+    const d = new Date(); const day = (d.getDay()+6)%7 // Montag=0
+    const monday = new Date(d); monday.setDate(d.getDate()-day)
+    return { start: monday.toISOString().slice(0,10), end: today }
+  }
+  if(bossRange.mode === 'month'){
+    const d = new Date()
+    const first = new Date(d.getFullYear(), d.getMonth(), 1)
+    return { start: first.toISOString().slice(0,10), end: today }
+  }
+  return { start: bossRange.start || today, end: bossRange.end || today }
+}
 
+async function renderBossDashboard(){
+  main.innerHTML = `<div class="empty">Lädt...</div>`
+
+  const { start, end } = currentRangeDates()
   const [recordsRes, hoursRes] = await Promise.all([
-    supabase.from('records').select('*, employees(name, akt_no), job_types(code, name, duration_minutes, price_eur, is_mts, is_variable_price)').gte('created_at', todayRange()).order('created_at', { ascending: false }),
-    supabase.from('daily_hours').select('*, employees(name, akt_no)').eq('work_date', new Date().toISOString().slice(0,10))
+    supabase.from('records').select('*, employees(name, akt_no), job_types(code, name, duration_minutes, price_eur, is_mts, is_variable_price)').gte('created_at', startOfDayISO(start)).lt('created_at', endOfDayISO(end)).order('created_at', { ascending: false }),
+    supabase.from('daily_hours').select('*, employees(name, akt_no)').gte('work_date', start).lte('work_date', end)
   ])
 
-  const records = recordsRes.data || []
+  const allRecords = recordsRes.data || []
   const hours = hoursRes.data || []
 
-  if(records.length === 0){
+  const rangeHeaderHtml = `
+    <div class="card">
+      <label>Zeitraum</label>
+      <div class="range-chips">
+        <div class="range-chip ${bossRange.mode==='today'?'active':''}" data-mode="today">Heute</div>
+        <div class="range-chip ${bossRange.mode==='week'?'active':''}" data-mode="week">Diese Woche</div>
+        <div class="range-chip ${bossRange.mode==='month'?'active':''}" data-mode="month">Dieser Monat</div>
+        <div class="range-chip ${bossRange.mode==='custom'?'active':''}" data-mode="custom">Zeitraum wählen</div>
+      </div>
+      ${bossRange.mode === 'custom' ? `
+        <div class="range-custom">
+          <div><label>Von</label><input type="date" id="rangeStart" value="${bossRange.start || start}"></div>
+          <div><label>Bis</label><input type="date" id="rangeEnd" value="${bossRange.end || end}"></div>
+        </div>
+        <button class="secondary" id="rangeApplyBtn">Bericht anzeigen</button>
+      ` : `<div class="sub" style="color:var(--ink-dim);font-size:12px;">${start === end ? start : start + ' – ' + end}</div>`}
+      <div class="search-wrap">
+        <label>Suche nach AKT-/Fahrgestellnummer</label>
+        <input type="text" id="searchInput" placeholder="z.B. AKT121212" value="${bossRange.search || ''}">
+      </div>
+    </div>
+  `
+
+  const search = (bossRange.search || '').trim().toLowerCase()
+  const records = search ? allRecords.filter(r => (r.ref_no||'').toLowerCase().includes(search)) : allRecords
+
+  if(allRecords.length === 0){
     main.innerHTML = `
-      <button class="refresh" id="refreshBtn">↻ Yenile</button>
-      <div class="empty"><p class="big">Bugün henüz iş girilmedi</p></div>`
-    document.getElementById('refreshBtn').addEventListener('click', renderBossDashboard)
+      <button class="refresh" id="refreshBtn">↻ Aktualisieren</button>
+      ${rangeHeaderHtml}
+      <div class="empty"><p class="big">Keine Aufträge in diesem Zeitraum</p></div>`
+    wireBossControls()
     return
   }
 
-  let normalRevenue = 0, mtsRevenue = 0
+  let normalRevenue = 0, mtsRevenue = 0, privatRevenue = 0
   records.forEach(r=>{
     const price = recordPrice(r)
     if(r.job_types.is_mts) mtsRevenue += price
+    else if(r.job_types.code === 'Privat') privatRevenue += price
     else normalRevenue += price
   })
-  const totalRevenue = normalRevenue + mtsRevenue
+  const totalRevenue = normalRevenue + mtsRevenue + privatRevenue
 
   const hoursMap = {}
   const branchMap = {}
-  hours.forEach(h => { hoursMap[h.employees.akt_no] = h.hours; branchMap[h.employees.akt_no] = h.branch })
+  hours.forEach(h => {
+    hoursMap[h.employees.akt_no] = (hoursMap[h.employees.akt_no] || 0) + Number(h.hours)
+    branchMap[h.employees.akt_no] = h.branch
+  })
 
   const branchRevenue = {}
   BRANCHES.forEach(b => branchRevenue[b] = 0)
@@ -418,16 +564,16 @@ async function renderBossDashboard(){
         <div class="top-row">
           <div>
             <div class="name">${s.name}</div>
-            <div class="sub">${s.akt_no} · ${declaredHours !== undefined ? declaredHours + ' saat · ' + (branchMap[s.akt_no] || '-') : 'saat girilmedi'}</div>
+            <div class="sub">${s.akt_no} · ${declaredHours !== undefined ? declaredHours + ' Std · ' + (branchMap[s.akt_no] || '-') : 'keine Stunden erfasst'}</div>
           </div>
           <div class="stat">
             <span class="n">${fmtEur(s.revenue)}</span>
-            <span class="label">${s.count} iş</span>
+            <span class="label">${s.count} Aufträge</span>
           </div>
         </div>
         ${capPct !== null ? `
           <div class="cap-bar"><div class="cap-fill ${capPct>100?'over':''}" style="width:${Math.min(capPct,100)}%;"></div></div>
-          <div class="sub" style="margin-top:4px;">Kapasite: %${capPct} (${Math.round(s.workedMinutes)} dk iş / ${declaredMinutes} dk mesai)</div>
+          <div class="sub" style="margin-top:4px;">Kapazität: %${capPct} (${Math.round(s.workedMinutes)} Min. Arbeit / ${declaredMinutes} Min. Anwesenheit)</div>
         ` : ''}
       </div>`
   }).join('')
@@ -436,69 +582,100 @@ async function renderBossDashboard(){
     <tr>
       <td>${r.employees.name}</td>
       <td>${r.job_types.code}${r.job_types.is_mts ? ' (MTS)' : ''}</td>
-      <td>${r.ref_no}</td>
+      <td>${r.ref_no || '-'}</td>
       <td>${fmtEur(recordPrice(r))}</td>
     </tr>`).join('')
 
   main.innerHTML = `
-    <button class="refresh" id="refreshBtn">↻ Yenile</button>
+    <button class="refresh" id="refreshBtn">↻ Aktualisieren</button>
+    ${rangeHeaderHtml}
     <div class="card">
       <div class="revenue-total">${fmtEur(totalRevenue)}</div>
       <div class="revenue-split">
         <div class="revenue-box">
           <div class="amount">${fmtEur(normalRevenue)}</div>
-          <div class="sub">Normal işler</div>
+          <div class="sub">Normal</div>
         </div>
         <div class="revenue-box mts">
           <div class="amount">${fmtEur(mtsRevenue)}</div>
-          <div class="sub">MTS işleri</div>
+          <div class="sub">MTS</div>
+        </div>
+        <div class="revenue-box privat">
+          <div class="amount">${fmtEur(privatRevenue)}</div>
+          <div class="sub">Privatkunden</div>
         </div>
       </div>
     </div>
     <div class="card">
-      <label>Filyal bazlı ciro</label>
-      <div class="revenue-split" style="flex-wrap:wrap;">
+      <label>Umsatz nach Filiale</label>
+      <div class="revenue-split">
         ${BRANCHES.map(b => `
-          <div class="revenue-box" style="min-width:30%;">
+          <div class="revenue-box">
             <div class="amount" style="color:var(--ink);font-size:16px;">${fmtEur(branchRevenue[b])}</div>
             <div class="sub">${b}</div>
           </div>`).join('')}
       </div>
-      ${unassigned > 0 ? `<div class="sub" style="margin-top:10px;text-align:center;">Filyal belirtilmemiş: ${fmtEur(unassigned)}</div>` : ''}
+      ${unassigned > 0 ? `<div class="sub" style="margin-top:10px;text-align:center;">Keine Filiale angegeben: ${fmtEur(unassigned)}</div>` : ''}
     </div>
     <div class="card">
-      <label>Çalışan bazında özet</label>
+      <label>Zusammenfassung pro Mitarbeiter</label>
       ${summaryHtml}
     </div>
     <div class="card">
-      <label>Tüm kayıtlar (${records.length})</label>
+      <label>Alle Einträge (${records.length})</label>
       <table>
-        <thead><tr><th>Çalışan</th><th>İş</th><th>No</th><th>Tutar</th></tr></thead>
+        <thead><tr><th>Mitarbeiter</th><th>Auftrag</th><th>Nr.</th><th>Betrag</th></tr></thead>
         <tbody>${rowsHtml}</tbody>
       </table>
     </div>
   `
-  document.getElementById('refreshBtn').addEventListener('click', renderBossDashboard)
+  wireBossControls()
+}
+
+function wireBossControls(){
+  document.getElementById('refreshBtn')?.addEventListener('click', renderBossDashboard)
+  document.querySelectorAll('.range-chip').forEach(chip=>{
+    chip.addEventListener('click', ()=>{
+      bossRange.mode = chip.dataset.mode
+      renderBossDashboard()
+    })
+  })
+  document.getElementById('rangeApplyBtn')?.addEventListener('click', ()=>{
+    bossRange.start = document.getElementById('rangeStart').value
+    bossRange.end = document.getElementById('rangeEnd').value
+    renderBossDashboard()
+  })
+  let searchTimer = null
+  document.getElementById('searchInput')?.addEventListener('input', (e)=>{
+    bossRange.search = e.target.value
+    clearTimeout(searchTimer)
+    searchTimer = setTimeout(renderBossDashboard, 400)
+  })
 }
 
 // ============ TAB YÖNETİMİ ============
 
 tabEmployee.addEventListener('click', ()=>{
   tabEmployee.classList.add('active'); tabBoss.classList.remove('active')
-  headerTitle.textContent = 'Çalışan Girişi'
-  if(selectedEmployeeId){ renderEmployeeDay() } else { renderEmployeeSelect() }
+  headerTitle.textContent = 'Mitarbeiter'
+  if(currentEmployee){ renderEmployeeDay() } else { renderLogin() }
 })
 
 tabBoss.addEventListener('click', ()=>{
   tabBoss.classList.add('active'); tabEmployee.classList.remove('active')
-  headerTitle.textContent = 'Şef Paneli'
+  headerTitle.textContent = 'Chef'
   if(bossUnlocked){ renderBossDashboard() } else { renderBossPin() }
 })
 
 async function init(){
-  main.innerHTML = `<div class="empty">Yükleniyor...</div>`
+  main.innerHTML = `<div class="empty">Lädt...</div>`
   await loadStaticData()
-  renderEmployeeSelect()
+  const savedId = localStorage.getItem(SESSION_KEY)
+  if(savedId){
+    const emp = employees.find(e => e.id === savedId)
+    if(emp){ currentEmployee = emp; updateLogoutBtn(); renderEmployeeDay(); return }
+  }
+  renderLogin()
 }
 init()
 </script>
