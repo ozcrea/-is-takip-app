@@ -146,6 +146,7 @@ const BOSS_PIN = "1617"
 const REGIESTUNDE_RATE = 33.28
 const BRANCHES = ['Ausschläger Weg', 'Horn', 'Wiesendamm']
 const SR_DELLE_PERFORMERS = ['Delltom', 'Hesam', 'M']
+const VAPID_PUBLIC_KEY = 'BNzgt99FJrSo2WjWtc3fhFzf0BcY3f8bxBs2vvzSvdGT09ARhZhNc7quHflDNLiPF1U2M_CdT832-SMYsQqZ-AU'
 const SESSION_KEY = 'wt_employee_id'
 
 const main = document.getElementById('main')
@@ -581,6 +582,45 @@ function renderBossPin(){
   })
 }
 
+function urlBase64ToUint8Array(base64String){
+  const padding = '='.repeat((4 - base64String.length % 4) % 4)
+  const base64 = (base64String + padding).replace(/-/g, '+').replace(/_/g, '/')
+  const rawData = atob(base64)
+  const outputArray = new Uint8Array(rawData.length)
+  for(let i = 0; i < rawData.length; ++i) outputArray[i] = rawData.charCodeAt(i)
+  return outputArray
+}
+
+async function getPushSubscriptionStatus(){
+  if(!('serviceWorker' in navigator) || !('PushManager' in window)) return 'unsupported'
+  const reg = await navigator.serviceWorker.ready
+  const sub = await reg.pushManager.getSubscription()
+  return sub ? 'subscribed' : 'not-subscribed'
+}
+
+async function enablePushNotifications(){
+  try {
+    const permission = await Notification.requestPermission()
+    if(permission !== 'granted'){ showToast('Benachrichtigungen wurden nicht erlaubt'); return }
+    const reg = await navigator.serviceWorker.ready
+    const sub = await reg.pushManager.subscribe({
+      userVisibleOnly: true,
+      applicationServerKey: urlBase64ToUint8Array(VAPID_PUBLIC_KEY)
+    })
+    const json = sub.toJSON()
+    const { error } = await supabase.from('push_subscriptions').upsert({
+      endpoint: json.endpoint,
+      p256dh: json.keys.p256dh,
+      auth: json.keys.auth
+    }, { onConflict: 'endpoint' })
+    if(error){ showToast('Fehler: ' + error.message); return }
+    showToast('Benachrichtigungen aktiviert')
+    renderBossDashboard()
+  } catch(e){
+    showToast('Fehler: ' + e.message)
+  }
+}
+
 function currentRangeDates(){
   const today = todayStr()
   if(bossRange.mode === 'today') return { start: today, end: today }
@@ -601,13 +641,22 @@ async function renderBossDashboard(){
   main.innerHTML = `<div class="empty">Lädt...</div>`
 
   const { start, end } = currentRangeDates()
-  const [recordsRes, hoursRes] = await Promise.all([
+  const [recordsRes, hoursRes, pushStatus] = await Promise.all([
     supabase.from('records').select('*, employees(name, akt_no), job_types(code, name, duration_minutes, price_eur, is_mts, is_variable_price)').gte('created_at', startOfDayISO(start)).lt('created_at', endOfDayISO(end)).order('created_at', { ascending: false }),
-    supabase.from('daily_hours').select('*, employees(name, akt_no)').gte('work_date', start).lte('work_date', end)
+    supabase.from('daily_hours').select('*, employees(name, akt_no)').gte('work_date', start).lte('work_date', end),
+    getPushSubscriptionStatus()
   ])
 
   const allRecords = recordsRes.data || []
   const hours = hoursRes.data || []
+
+  const pushCardHtml = pushStatus === 'unsupported' ? '' : `
+    <div class="card">
+      ${pushStatus === 'subscribed'
+        ? '<div class="sub" style="color:var(--green);">✓ Tägliche Benachrichtigung (17:30) aktiv</div>'
+        : '<button class="secondary" id="enablePushBtn">🔔 Tägliche Benachrichtigung aktivieren</button>'}
+    </div>
+  `
 
   const rangeHeaderHtml = `
     <div class="card">
@@ -656,6 +705,7 @@ async function renderBossDashboard(){
   if(allRecords.length === 0){
     main.innerHTML = `
       <button class="refresh" id="refreshBtn">↻ Aktualisieren</button>
+      ${pushCardHtml}
       ${rangeHeaderHtml}
       <div class="empty"><p class="big">Keine Aufträge in diesem Zeitraum</p></div>`
     wireBossControls()
@@ -753,6 +803,7 @@ async function renderBossDashboard(){
 
   main.innerHTML = `
     <button class="refresh" id="refreshBtn">↻ Aktualisieren</button>
+    ${pushCardHtml}
     ${rangeHeaderHtml}
     <div class="card">
       <div class="revenue-total">${fmtEur(totalRevenue)}</div>
@@ -802,6 +853,7 @@ async function renderBossDashboard(){
 
 function wireBossControls(){
   document.getElementById('refreshBtn')?.addEventListener('click', renderBossDashboard)
+  document.getElementById('enablePushBtn')?.addEventListener('click', enablePushNotifications)
   document.querySelectorAll('.range-chip[data-mode]').forEach(chip=>{
     chip.addEventListener('click', ()=>{
       bossRange.mode = chip.dataset.mode
