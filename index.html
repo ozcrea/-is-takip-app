@@ -787,6 +787,7 @@ async function renderBossDashboard(){
   }
 
   const employeeFilterHtml = `
+    <label style="margin-top:0;">Mitarbeiter filtern</label>
     <select id="employeeFilterSelect">
       <option value="">Alle Mitarbeiter</option>
       ${employees.map(e => `<option value="${e.akt_no}" ${employeeFilter===e.akt_no?'selected':''}>${e.name} (${e.akt_no})</option>`).join('')}
