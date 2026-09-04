@@ -144,7 +144,7 @@ const supabase = createClient(SUPABASE_URL, SUPABASE_KEY)
 
 const BOSS_PIN = "1617"
 const REGIESTUNDE_RATE = 33.28
-const BRANCHES = ['Audi', 'Horn', 'Wiesendamm']
+const BRANCHES = ['Ausschläger Weg', 'Horn', 'Wiesendamm']
 const SR_DELLE_PERFORMERS = ['Delltom', 'Hesam', 'M']
 const SESSION_KEY = 'wt_employee_id'
 
@@ -427,7 +427,7 @@ async function renderEmployeeDay(){
       if(val === null) return
       const num = parseFloat(val.replace(',','.'))
       if(isNaN(num)) { showToast('Ungültige Zahl'); return }
-      const br = prompt('Welche Filiale? (Audi / Horn / Wiesendamm)', savedBranch || '')
+      const br = prompt('Welche Filiale? (Ausschläger Weg / Horn / Wiesendamm)', savedBranch || '')
       await saveHours(num, br || savedBranch)
     })
   } else {
@@ -629,11 +629,29 @@ async function renderBossDashboard(){
         <label>Suche nach AKT-/Fahrgestellnummer</label>
         <input type="text" id="searchInput" placeholder="z.B. AKT121212" value="${bossRange.search || ''}">
       </div>
+      <div class="search-wrap">
+        <label>Filiale</label>
+        <div class="range-chips">
+          <div class="range-chip branch-chip ${!bossRange.branchFilter?'active':''}" data-branch="">Alle</div>
+          ${BRANCHES.map(b => `<div class="range-chip branch-chip ${bossRange.branchFilter===b?'active':''}" data-branch="${b}">${b}</div>`).join('')}
+        </div>
+      </div>
     </div>
   `
 
+  const hoursMap = {}
+  const branchMap = {}
+  hours.forEach(h => {
+    hoursMap[h.employees.akt_no] = (hoursMap[h.employees.akt_no] || 0) + Number(h.hours)
+    branchMap[h.employees.akt_no] = h.branch
+  })
+
   const search = (bossRange.search || '').trim().toLowerCase()
-  const records = search ? allRecords.filter(r => (r.ref_no||'').toLowerCase().includes(search)) : allRecords
+  const branchFilter = bossRange.branchFilter || ''
+  let records = search ? allRecords.filter(r => (r.ref_no||'').toLowerCase().includes(search)) : allRecords
+  if(branchFilter){
+    records = records.filter(r => branchMap[r.employees.akt_no] === branchFilter)
+  }
 
   if(allRecords.length === 0){
     main.innerHTML = `
@@ -652,13 +670,6 @@ async function renderBossDashboard(){
     else normalRevenue += price
   })
   const totalRevenue = normalRevenue + mtsRevenue + privatRevenue
-
-  const hoursMap = {}
-  const branchMap = {}
-  hours.forEach(h => {
-    hoursMap[h.employees.akt_no] = (hoursMap[h.employees.akt_no] || 0) + Number(h.hours)
-    branchMap[h.employees.akt_no] = h.branch
-  })
 
   const branchRevenue = {}
   BRANCHES.forEach(b => branchRevenue[b] = 0)
@@ -791,7 +802,7 @@ async function renderBossDashboard(){
 
 function wireBossControls(){
   document.getElementById('refreshBtn')?.addEventListener('click', renderBossDashboard)
-  document.querySelectorAll('.range-chip').forEach(chip=>{
+  document.querySelectorAll('.range-chip[data-mode]').forEach(chip=>{
     chip.addEventListener('click', ()=>{
       bossRange.mode = chip.dataset.mode
       if(bossRange.mode === 'custom' && !bossRange.start){
@@ -800,6 +811,12 @@ function wireBossControls(){
         bossRange.start = start.toISOString().slice(0,10)
         bossRange.end = end.toISOString().slice(0,10)
       }
+      renderBossDashboard()
+    })
+  })
+  document.querySelectorAll('.branch-chip').forEach(chip=>{
+    chip.addEventListener('click', ()=>{
+      bossRange.branchFilter = chip.dataset.branch
       renderBossDashboard()
     })
   })
