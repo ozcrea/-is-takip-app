@@ -90,18 +90,33 @@
   .range-custom > div{ flex:1; }
   .range-custom input{ margin-bottom:0; }
   .search-wrap{ margin-top:10px; }
+
+  .landing-screen{ position:fixed; inset:0; background:#16181B; display:flex; align-items:center; justify-content:center; z-index:50; }
+  .landing-screen .stage{ display:flex; flex-direction:column; align-items:center; gap:52px; width:100%; max-width:420px; padding:40px; }
+  .landing-screen .brand{ display:flex; flex-direction:column; align-items:center; gap:10px; }
+  .landing-screen .logo-row{ display:flex; flex-direction:column; align-items:center; gap:6px; }
+  .landing-screen .logo{ font-family:'Barlow Condensed',sans-serif; font-size:56px; font-weight:800; letter-spacing:-1.5px; color:var(--ink); line-height:1; }
+  .landing-screen .logo .accent{ color:#6FA3D8; }
+  .landing-screen .cross{ font-size:20px; font-weight:300; color:#7C8B9C; line-height:1; }
+  .landing-screen .product{ font-size:13px; font-weight:500; letter-spacing:1px; color:#8B9198; text-transform:lowercase; margin-top:2px; }
+  .landing-screen .panel{ width:100%; display:flex; flex-direction:column; gap:14px; }
+  .landing-screen .panel select, .landing-screen .panel input{ margin-bottom:0; }
+  .btn-login{ width:100%; padding:15px 20px; background:#4A7FB0; color:#fff; border:none; border-radius:4px; font-size:15px; font-weight:600; letter-spacing:.2px; cursor:pointer; transition:background .15s ease; }
+  .btn-login:hover{ background:#6FA3D8; }
+  .btn-boss{ width:100%; padding:13px 20px; background:transparent; color:#8B9198; border:1px solid #2A2E33; border-radius:4px; font-size:13.5px; cursor:pointer; transition:border-color .15s ease, color .15s ease; }
+  .btn-boss:hover{ border-color:#7C8B9C; color:#AAB6C2; }
 </style>
 </head>
 <body>
 <div class="app">
-  <header>
+  <header id="appHeader">
     <div>
       <p class="eyebrow">Werkstatt Auftragserfassung</p>
       <h1 id="headerTitle">Mitarbeiter</h1>
     </div>
     <button class="logout-btn" id="logoutBtn" style="display:none;">Abmelden</button>
   </header>
-  <nav>
+  <nav id="appNav">
     <button id="tabEmployee" class="active">Mitarbeiter</button>
     <button id="tabBoss">Chef</button>
   </nav>
@@ -125,6 +140,13 @@ const headerTitle = document.getElementById('headerTitle')
 const tabEmployee = document.getElementById('tabEmployee')
 const tabBoss = document.getElementById('tabBoss')
 const logoutBtn = document.getElementById('logoutBtn')
+const appHeader = document.getElementById('appHeader')
+const appNav = document.getElementById('appNav')
+
+function setChromeVisible(visible){
+  appHeader.style.display = visible ? 'flex' : 'none'
+  appNav.style.display = visible ? 'flex' : 'none'
+}
 
 let bossUnlocked = false
 let employees = []
@@ -179,7 +201,78 @@ async function loadStaticData(){
   jobTypes = jt || []
 }
 
-// ============ GİRİŞ (LOGIN) ============
+// ============ AÇILIŞ EKRANI (LANDING) ============
+
+function renderLandingScreen(){
+  setChromeVisible(false)
+  main.innerHTML = `
+    <div class="landing-screen">
+      <div class="stage">
+        <div class="brand">
+          <div class="logo-row">
+            <div class="logo">2A<span class="accent">1</span>Z</div>
+            <span class="cross">×</span>
+            <div class="product">autowerk.app</div>
+          </div>
+        </div>
+        <div class="panel" id="landingPanel">
+          <button class="btn-login" id="landingLoginBtn">Anmelden</button>
+          <button class="btn-boss" id="landingBossBtn">Chef-Panel</button>
+        </div>
+      </div>
+    </div>
+  `
+  document.getElementById('landingLoginBtn').addEventListener('click', renderLandingEmployeeLogin)
+  document.getElementById('landingBossBtn').addEventListener('click', renderLandingBossLogin)
+}
+
+function renderLandingEmployeeLogin(){
+  document.getElementById('landingPanel').innerHTML = `
+    <select id="loginEmpSelect">
+      <option value="">Name auswählen...</option>
+      ${employees.map(e => `<option value="${e.id}">${e.name} (${e.akt_no})</option>`).join('')}
+    </select>
+    <input type="password" id="loginPassword" placeholder="Passwort">
+    <button class="btn-login" id="loginSubmitBtn">Anmelden</button>
+    <button class="btn-boss" id="landingBackBtn">← Zurück</button>
+  `
+  document.getElementById('loginSubmitBtn').addEventListener('click', ()=>{
+    const empId = document.getElementById('loginEmpSelect').value
+    const pw = document.getElementById('loginPassword').value
+    const emp = employees.find(e => e.id === empId)
+    if(!emp){ showToast('Bitte Namen auswählen'); return }
+    if((emp.password || '') !== pw){ showToast('Falsches Passwort'); return }
+    currentEmployee = emp
+    localStorage.setItem(SESSION_KEY, emp.id)
+    updateLogoutBtn()
+    setChromeVisible(true)
+    tabEmployee.classList.add('active'); tabBoss.classList.remove('active')
+    headerTitle.textContent = 'Mitarbeiter'
+    renderEmployeeDay()
+  })
+  document.getElementById('landingBackBtn').addEventListener('click', renderLandingScreen)
+}
+
+function renderLandingBossLogin(){
+  document.getElementById('landingPanel').innerHTML = `
+    <input type="password" id="landingPinInput" maxlength="4" inputmode="numeric" placeholder="PIN ••••">
+    <button class="btn-login" id="landingPinBtn">Anmelden</button>
+    <button class="btn-boss" id="landingBackBtn">← Zurück</button>
+  `
+  document.getElementById('landingPinBtn').addEventListener('click', ()=>{
+    if(document.getElementById('landingPinInput').value === BOSS_PIN){
+      bossUnlocked = true
+      bossRange = { mode: 'today', start: null, end: null }
+      setChromeVisible(true)
+      tabBoss.classList.add('active'); tabEmployee.classList.remove('active')
+      headerTitle.textContent = 'Chef'
+      renderBossDashboard()
+    } else { showToast('Falsche PIN') }
+  })
+  document.getElementById('landingBackBtn').addEventListener('click', renderLandingScreen)
+}
+
+// ============ GİRİŞ (LOGIN, sekme içi) ============
 
 function renderLogin(){
   main.innerHTML = `
@@ -215,7 +308,7 @@ logoutBtn.addEventListener('click', ()=>{
   currentEmployee = null
   localStorage.removeItem(SESSION_KEY)
   updateLogoutBtn()
-  renderLogin()
+  renderLandingScreen()
 })
 
 // ============ ÇALIŞAN GİRİŞİ (TAGESANSICHT) ============
@@ -668,14 +761,15 @@ tabBoss.addEventListener('click', ()=>{
 })
 
 async function init(){
+  setChromeVisible(false)
   main.innerHTML = `<div class="empty">Lädt...</div>`
   await loadStaticData()
   const savedId = localStorage.getItem(SESSION_KEY)
   if(savedId){
     const emp = employees.find(e => e.id === savedId)
-    if(emp){ currentEmployee = emp; updateLogoutBtn(); renderEmployeeDay(); return }
+    if(emp){ currentEmployee = emp; updateLogoutBtn(); setChromeVisible(true); renderEmployeeDay(); return }
   }
-  renderLogin()
+  renderLandingScreen()
 }
 init()
 </script>
