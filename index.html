@@ -39,8 +39,7 @@
   .job-btn.selected .code{ color:var(--amber); }
   .mts-tag{ font-size:9px; background:rgba(91,155,213,0.18); color:var(--blue); padding:2px 6px; border-radius:10px; margin-left:6px; }
   .qty-tag{ font-size:9px; background:rgba(155,126,222,0.18); color:var(--purple); padding:2px 6px; border-radius:10px; margin-left:6px; }
-  .job-btn .qty-add{ background:var(--amber); color:#1B1E21; border:none; font-weight:700; font-size:13px; padding:8px 14px; border-radius:6px; cursor:pointer; }
-  .job-btn .qty-count{ font-family:'JetBrains Mono',monospace; font-size:12px; color:var(--ink-dim); margin-right:8px; }
+  .job-btn .qty-count{ font-family:'JetBrains Mono',monospace; font-size:12px; color:var(--ink-dim); }
   button.primary{ width:100%; background:var(--amber); color:#1B1E21; border:none; font-weight:700; font-size:16px; padding:16px; border-radius:8px; cursor:pointer; }
   button.primary:disabled{ background:var(--steel-2); color:var(--ink-dim); cursor:not-allowed; }
   button.secondary{ width:100%; background:var(--steel-2); color:var(--ink); border:1px solid var(--line); font-weight:600; font-size:14px; padding:12px; border-radius:8px; cursor:pointer; }
@@ -131,7 +130,7 @@ const SUPABASE_URL = "https://mfgofccidwmrqlyjbsvz.supabase.co"
 const SUPABASE_KEY = "sb_publishable_n5PXoej2lr_FQQVCjag0jw_EifWkYir"
 const supabase = createClient(SUPABASE_URL, SUPABASE_KEY)
 
-const BOSS_PIN = "1234"
+const BOSS_PIN = "1617"
 const REGIESTUNDE_RATE = 33.28
 const BRANCHES = ['Audi', 'Horn', 'Wiesendamm']
 const SR_DELLE_PERFORMERS = ['Delltom', 'Hesam', 'M']
@@ -357,25 +356,20 @@ async function renderEmployeeDay(){
     <div class="card">
       <label>Neuen Auftrag hinzufügen</label>
       <div class="job-list" id="jobList">
-        ${jobTypes.map(j => {
-          if(j.is_quantity){
-            return `
-            <div class="job-btn" data-qty-id="${j.id}">
-              <span class="code">${j.code}<span class="qty-tag">+1</span></span>
-              <span style="display:flex;align-items:center;">
-                <span class="qty-count">${qtyCounts[j.id]||0}× heute</span>
-                <button type="button" class="qty-add" data-qty-add="${j.id}">+1</button>
-              </span>
-            </div>`
-          }
-          return `
+        ${jobTypes.map(j => `
           <div class="job-btn" data-id="${j.id}">
-            <span class="code">${j.code}${j.is_mts ? '<span class="mts-tag">MTS</span>' : ''}</span>
-          </div>`
-        }).join('')}
+            <span class="code">${j.code}${j.is_mts ? '<span class="mts-tag">MTS</span>' : ''}${j.is_quantity ? '<span class="qty-tag">Stück</span>' : ''}</span>
+            ${j.is_quantity ? `<span class="qty-count">${qtyCounts[j.id]||0}× heute</span>` : ''}
+          </div>`).join('')}
       </div>
-      <label>AKT-Nummer oder Fahrgestellnummer</label>
-      <input type="text" id="refNo" placeholder="z.B. AKT121212 oder WVW...">
+      <div id="refNoWrap">
+        <label>AKT-Nummer oder Fahrgestellnummer</label>
+        <input type="text" id="refNo" placeholder="z.B. AKT121212 oder WVW...">
+      </div>
+      <div id="qtyWrap" style="display:none;">
+        <label>Anzahl</label>
+        <input type="number" id="qtyInput" placeholder="z.B. 20" min="1" step="1">
+      </div>
       <div id="priceWrap" style="display:none;">
         <label>Preis (€)</label>
         <input type="number" id="customPrice" placeholder="z.B. 75" step="0.01" min="0">
@@ -454,19 +448,15 @@ async function renderEmployeeDay(){
       document.querySelectorAll('.job-btn[data-id]').forEach(b=>b.classList.remove('selected'))
       btn.classList.add('selected')
       selectedJobType = jobTypes.find(j => j.id === btn.dataset.id)
+      document.getElementById('refNoWrap').style.display = selectedJobType.is_quantity ? 'none' : 'block'
+      document.getElementById('qtyWrap').style.display = selectedJobType.is_quantity ? 'block' : 'none'
       document.getElementById('regiestundeWrap').style.display = selectedJobType.is_aufbereitung ? 'block' : 'none'
       document.getElementById('priceWrap').style.display = selectedJobType.is_variable_price ? 'block' : 'none'
       document.getElementById('performerWrap').style.display = selectedJobType.code === 'SR-Delle' ? 'block' : 'none'
       if(!selectedJobType.is_aufbereitung) document.getElementById('regiestunde').value = ''
       if(selectedJobType.code !== 'SR-Delle') document.getElementById('performerSelect').value = ''
+      if(selectedJobType.is_quantity) document.getElementById('qtyInput').value = ''
       validateAdd()
-    })
-  })
-  document.querySelectorAll('[data-qty-add]').forEach(btn=>{
-    btn.addEventListener('click', async (e)=>{
-      e.stopPropagation()
-      const jobType = jobTypes.find(j => j.id === btn.dataset.qtyAdd)
-      await addQuantityRecord(jobType)
     })
   })
   document.querySelectorAll('[data-del]').forEach(btn=>{
@@ -479,6 +469,7 @@ async function renderEmployeeDay(){
     })
   })
   document.getElementById('refNo').addEventListener('input', validateAdd)
+  document.getElementById('qtyInput').addEventListener('input', validateAdd)
   document.getElementById('customPrice').addEventListener('input', validateAdd)
   document.getElementById('performerSelect').addEventListener('change', validateAdd)
   document.getElementById('addBtn').addEventListener('click', addRecord)
@@ -497,19 +488,42 @@ async function saveHours(num, branch){
 }
 
 function validateAdd(){
-  const refNo = document.getElementById('refNo').value.trim()
-  let ok = selectedJobType && refNo
-  if(selectedJobType && selectedJobType.is_variable_price){
-    const priceVal = document.getElementById('customPrice').value
-    ok = ok && priceVal && parseFloat(priceVal) > 0
-  }
-  if(selectedJobType && selectedJobType.code === 'SR-Delle'){
-    ok = ok && document.getElementById('performerSelect').value
+  if(!selectedJobType){ document.getElementById('addBtn').disabled = true; return }
+  let ok = true
+  if(selectedJobType.is_quantity){
+    const qtyVal = document.getElementById('qtyInput').value
+    ok = qtyVal && parseInt(qtyVal) > 0
+  } else {
+    const refNo = document.getElementById('refNo').value.trim()
+    ok = !!refNo
+    if(selectedJobType.is_variable_price){
+      const priceVal = document.getElementById('customPrice').value
+      ok = ok && priceVal && parseFloat(priceVal) > 0
+    }
+    if(selectedJobType.code === 'SR-Delle'){
+      ok = ok && document.getElementById('performerSelect').value
+    }
   }
   document.getElementById('addBtn').disabled = !ok
 }
 
 async function addRecord(){
+  if(selectedJobType.is_quantity){
+    const qty = parseInt(document.getElementById('qtyInput').value)
+    const rows = Array.from({ length: qty }, () => ({
+      employee_id: currentEmployee.id,
+      job_type_id: selectedJobType.id,
+      ref_no: null,
+      regiestunde: null
+    }))
+    const { error } = await supabase.from('records').insert(rows)
+    if(error){ showToast('Fehler: ' + error.message); return }
+    showToast(selectedJobType.code + ' ×' + qty + ' hinzugefügt')
+    selectedJobType = null
+    renderEmployeeDay()
+    return
+  }
+
   const refNo = document.getElementById('refNo').value.trim()
   const regVal = document.getElementById('regiestunde').value
   const priceVal = document.getElementById('customPrice').value
@@ -532,18 +546,6 @@ async function addRecord(){
   if(error){ showToast('Fehler: ' + error.message); return }
   showToast('Auftrag hinzugefügt')
   selectedJobType = null
-  renderEmployeeDay()
-}
-
-async function addQuantityRecord(jobType){
-  const { error } = await supabase.from('records').insert({
-    employee_id: currentEmployee.id,
-    job_type_id: jobType.id,
-    ref_no: null,
-    regiestunde: null
-  })
-  if(error){ showToast('Fehler: ' + error.message); return }
-  showToast(jobType.code + ' +1')
   renderEmployeeDay()
 }
 
