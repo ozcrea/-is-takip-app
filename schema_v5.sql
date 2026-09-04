@@ -39,16 +39,15 @@ insert into job_types (code, name, duration_minutes, price_eur, is_aufbereitung,
   ('Ausl-NW2',    'Auslieferungsfinish NW2',                          25,  19.76,  false, false, false, false, true, 36),
   ('NW-Sys',      'NW Systempflege',                                  25,  43.68,  false, false, false, false, true, 37),
   -- Sayaç bazlı işler (AKT GEREKMEZ, +1 ile eklenir)
-  -- NOT: NW-Annahme fiyatı henüz TEYİT EDİLMEDİ, 0 € olarak girildi — kullanıcıdan doğru
-  -- fiyat öğrenilince "update job_types set price_eur = X where code = 'NW-Annahme';" ile düzeltin.
-  ('SW1',         'Service Wäsche 1',                                 10,  3.74,   false, false, false, true,  true, 40),
-  ('SW2',         'Service Wäsche 2',                                 10,  6.76,   false, false, false, true,  true, 41),
-  ('NW-Annahme',  'Neuwagenannahme',                                  10,  0,      false, false, false, true,  true, 42),
+  ('SW1',         'Service Wäsche 1',                                 10,   3.74,  false, false, false, true,  true, 40),
+  ('SW2',         'Service Wäsche 2',                                 10,   6.76,  false, false, false, true,  true, 41),
+  ('NW-Annahme',  'Annahme vom Spediteur je KFZ',                     10,   7.80,  false, false, false, true,  true, 42),
   -- Değişken fiyatlı işler (fiyat elle girilir, AKT gerekir)
-  -- NOT: Smart Repair süreleri (90/60 dk) varsayımdır, teyit edilince duration_minutes güncellenmeli.
-  ('Privat',      'Privat Kunde',                                     150, null,   false, false, true,  false, true, 50),
-  ('SR-Lack',     'Smart Repair - Lack',                              90,  null,   false, false, true,  false, true, 51),
-  ('SR-Delle',    'Smart Repair - Delle',                             60,  null,   false, false, true,  false, true, 52)
+  -- Smart Repair'de standart süre yok (kullanıcı onayı) -> duration_minutes = null,
+  -- bu işler şef panelindeki kapasite (Kapazität) hesabına dahil edilmez.
+  ('Privat',      'Privat Kunde',                                     150,  null,  false, false, true,  false, true, 50),
+  ('SR-Lack',     'Smart Repair - Lack',                              null, null,  false, false, true,  false, true, 51),
+  ('SR-Delle',    'Smart Repair - Delle',                             null, null,  false, false, true,  false, true, 52)
 on conflict (code) do update set
   name = excluded.name,
   duration_minutes = excluded.duration_minutes,
