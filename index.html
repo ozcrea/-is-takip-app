@@ -117,6 +117,10 @@
   .btn-login:hover{ background:#6FA3D8; }
   .btn-boss{ width:100%; padding:13px 20px; background:transparent; color:#8B9198; border:1px solid #2A2E33; border-radius:4px; font-size:13.5px; cursor:pointer; transition:border-color .15s ease, color .15s ease; }
   .btn-boss:hover{ border-color:#7C8B9C; color:#AAB6C2; }
+
+  .gate-screen{ position:fixed; inset:0; background:#16181B; z-index:100; display:flex; align-items:center; justify-content:center; }
+  .gate-screen .box{ width:100%; max-width:300px; padding:40px; text-align:center; }
+  .gate-screen .lock{ font-size:32px; margin-bottom:18px; }
 </style>
 </head>
 <body>
@@ -146,8 +150,16 @@ const BOSS_PIN = "1617"
 const REGIESTUNDE_RATE = 33.28
 const BRANCHES = ['Ausschläger Weg', 'Horn', 'Wiesendamm']
 const SR_DELLE_PERFORMERS = ['Delltom', 'Hesam', 'M']
-const VAPID_PUBLIC_KEY = 'BNzgt99FJrSo2WjWtc3fhFzf0BcY3f8bxBs2vvzSvdGT09ARhZhNc7quHflDNLiPF1U2M_CdT832-SMYsQqZ-AU'
+const VAPID_PUBLIC_KEY = 'BHWTo7bjAcsBLL9HbvJczCDcBj78aB4xv1atwN_CaaF7-PF5o-6WPKguMaRC6_-L_d0kiLNQTaxCUBqr6x4yIfU'
 const SESSION_KEY = 'wt_employee_id'
+const AUTH_EMAIL_DOMAIN = 'mitarbeiter.autowerk.app'
+
+// Site geneli erişim şifresi. Bu SADECE tarayıcı tarafında kontrol edilen
+// bir engel — sayfa kaynağını görebilen biri şifreyi görebilir. Gerçek
+// veri koruması Supabase RLS'ten geliyor, bu sadece rastgele ziyaretçiyi
+// arayüzü görmekten alıkoyan basit bir kapı.
+const SITE_GATE_PASSWORD = 'DEĞİŞTİR-BENİ'
+const SITE_GATE_KEY = 'wt_site_gate_ok'
 
 const main = document.getElementById('main')
 const headerTitle = document.getElementById('headerTitle')
@@ -215,6 +227,32 @@ async function loadStaticData(){
   jobTypes = jt || []
 }
 
+// ============ SİTE GENELİ ŞİFRE KAPISI ============
+
+function renderSiteGate(){
+  setChromeVisible(false)
+  main.innerHTML = `
+    <div class="gate-screen">
+      <div class="box">
+        <div class="lock">🔒</div>
+        <input type="password" id="gatePassword" placeholder="Passwort">
+        <button class="btn-login" id="gateSubmitBtn">Weiter</button>
+      </div>
+    </div>
+  `
+  const submit = () => {
+    const val = document.getElementById('gatePassword').value
+    if(val === SITE_GATE_PASSWORD){
+      localStorage.setItem(SITE_GATE_KEY, '1')
+      startApp()
+    } else {
+      showToast('Falsches Passwort')
+    }
+  }
+  document.getElementById('gateSubmitBtn').addEventListener('click', submit)
+  document.getElementById('gatePassword').addEventListener('keydown', (e)=>{ if(e.key === 'Enter') submit() })
+}
+
 // ============ AÇILIŞ EKRANI (LANDING) ============
 
 function renderLandingScreen(){
@@ -240,29 +278,55 @@ function renderLandingScreen(){
   document.getElementById('landingBossBtn').addEventListener('click', renderLandingBossLogin)
 }
 
+// Bir çalışanı doğrular. auth_user_id doluysa gerçek Supabase Auth
+// üzerinden (signInWithPassword), henüz taşınmadıysa (geçiş dönemi)
+// eski yöntemle (düz metin karşılaştırma) — böylece migrate-employees
+// fonksiyonu çalıştırılmadan önce de sonra da giriş bozulmaz.
+async function authenticateEmployee(emp, password){
+  if(emp.auth_user_id){
+    const email = `${emp.akt_no.toLowerCase()}@${AUTH_EMAIL_DOMAIN}`
+    const { error } = await supabase.auth.signInWithPassword({ email, password })
+    if(error){ return false }
+    return true
+  }
+  return (emp.password || '') === password
+}
+
+function routeAfterLogin(emp){
+  currentEmployee = emp
+  localStorage.setItem(SESSION_KEY, emp.id)
+  updateLogoutBtn()
+  setChromeVisible(true)
+  if(emp.is_admin){
+    bossUnlocked = true
+    tabBoss.classList.add('active'); tabEmployee.classList.remove('active')
+    headerTitle.textContent = 'Chef'
+    renderBossDashboard()
+  } else {
+    tabEmployee.classList.add('active'); tabBoss.classList.remove('active')
+    headerTitle.textContent = 'Mitarbeiter'
+    renderEmployeeDay()
+  }
+}
+
 function renderLandingEmployeeLogin(){
   document.getElementById('landingPanel').innerHTML = `
     <select id="loginEmpSelect">
       <option value="">Name auswählen...</option>
-      ${employees.map(e => `<option value="${e.id}">${e.name} (${e.akt_no})</option>`).join('')}
+      ${employees.filter(e => !e.hidden_from_login).map(e => `<option value="${e.id}">${e.name} (${e.akt_no})</option>`).join('')}
     </select>
     <input type="password" id="loginPassword" placeholder="Passwort">
     <button class="btn-login" id="loginSubmitBtn">Anmelden</button>
     <button class="btn-boss" id="landingBackBtn">← Zurück</button>
   `
-  document.getElementById('loginSubmitBtn').addEventListener('click', ()=>{
+  document.getElementById('loginSubmitBtn').addEventListener('click', async ()=>{
     const empId = document.getElementById('loginEmpSelect').value
     const pw = document.getElementById('loginPassword').value
     const emp = employees.find(e => e.id === empId)
     if(!emp){ showToast('Bitte Namen auswählen'); return }
-    if((emp.password || '') !== pw){ showToast('Falsches Passwort'); return }
-    currentEmployee = emp
-    localStorage.setItem(SESSION_KEY, emp.id)
-    updateLogoutBtn()
-    setChromeVisible(true)
-    tabEmployee.classList.add('active'); tabBoss.classList.remove('active')
-    headerTitle.textContent = 'Mitarbeiter'
-    renderEmployeeDay()
+    const ok = await authenticateEmployee(emp, pw)
+    if(!ok){ showToast('Falsches Passwort'); return }
+    routeAfterLogin(emp)
   })
   document.getElementById('landingBackBtn').addEventListener('click', renderLandingScreen)
 }
@@ -297,7 +361,7 @@ function renderLogin(){
         <label>Name / AKT-Nummer</label>
         <select id="loginEmpSelect">
           <option value="">Auswählen...</option>
-          ${employees.map(e => `<option value="${e.id}">${e.name} (${e.akt_no})</option>`).join('')}
+          ${employees.filter(e => !e.hidden_from_login).map(e => `<option value="${e.id}">${e.name} (${e.akt_no})</option>`).join('')}
         </select>
         <label>Passwort</label>
         <input type="password" id="loginPassword" placeholder="Passwort">
@@ -305,12 +369,13 @@ function renderLogin(){
       </div>
     </div>
   `
-  document.getElementById('loginBtn').addEventListener('click', ()=>{
+  document.getElementById('loginBtn').addEventListener('click', async ()=>{
     const empId = document.getElementById('loginEmpSelect').value
     const pw = document.getElementById('loginPassword').value
     const emp = employees.find(e => e.id === empId)
     if(!emp){ showToast('Bitte Namen auswählen'); return }
-    if((emp.password || '') !== pw){ showToast('Falsches Passwort'); return }
+    const ok = await authenticateEmployee(emp, pw)
+    if(!ok){ showToast('Falsches Passwort'); return }
     currentEmployee = emp
     localStorage.setItem(SESSION_KEY, emp.id)
     updateLogoutBtn()
@@ -318,8 +383,12 @@ function renderLogin(){
   })
 }
 
-logoutBtn.addEventListener('click', ()=>{
+logoutBtn.addEventListener('click', async ()=>{
+  if(currentEmployee?.auth_user_id){
+    await supabase.auth.signOut()
+  }
   currentEmployee = null
+  bossUnlocked = false
   localStorage.removeItem(SESSION_KEY)
   updateLogoutBtn()
   renderLandingScreen()
@@ -905,19 +974,51 @@ tabEmployee.addEventListener('click', ()=>{
 tabBoss.addEventListener('click', ()=>{
   tabBoss.classList.add('active'); tabEmployee.classList.remove('active')
   headerTitle.textContent = 'Chef'
-  if(bossUnlocked){ renderBossDashboard() } else { renderBossPin() }
+  if(currentEmployee?.is_admin || bossUnlocked){ renderBossDashboard() } else { renderBossPin() }
 })
 
-async function init(){
-  setChromeVisible(false)
+async function startApp(){
   main.innerHTML = `<div class="empty">Lädt...</div>`
   await loadStaticData()
+
+  // Önce gerçek Supabase Auth oturumu var mı kontrol edilir (auth_user_id
+  // ile taşınmış çalışanlar için — sayfa yenilenince otomatik giriş).
+  const { data: { session } } = await supabase.auth.getSession()
+  if(session){
+    const emp = employees.find(e => e.auth_user_id === session.user.id)
+    if(emp){
+      currentEmployee = emp
+      localStorage.setItem(SESSION_KEY, emp.id)
+      updateLogoutBtn()
+      setChromeVisible(true)
+      if(emp.is_admin){
+        bossUnlocked = true
+        tabBoss.classList.add('active'); tabEmployee.classList.remove('active')
+        headerTitle.textContent = 'Chef'
+        renderBossDashboard()
+      } else {
+        renderEmployeeDay()
+      }
+      return
+    }
+  }
+
+  // Geçiş dönemi: auth_user_id henüz yoksa eski localStorage oturumuna bak.
   const savedId = localStorage.getItem(SESSION_KEY)
   if(savedId){
     const emp = employees.find(e => e.id === savedId)
     if(emp){ currentEmployee = emp; updateLogoutBtn(); setChromeVisible(true); renderEmployeeDay(); return }
   }
   renderLandingScreen()
+}
+
+async function init(){
+  setChromeVisible(false)
+  if(localStorage.getItem(SITE_GATE_KEY) === '1'){
+    await startApp()
+  } else {
+    renderSiteGate()
+  }
 }
 init()
 
