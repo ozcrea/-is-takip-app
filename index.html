@@ -150,6 +150,8 @@ const BOSS_PIN = "1617"
 const REGIESTUNDE_RATE = 33.28
 const BRANCHES = ['Ausschläger Weg', 'Horn', 'Wiesendamm']
 const SR_DELLE_PERFORMERS = ['Delltom', 'Hesam', 'M']
+const FOTOSERVICE_PRICE = 9.88
+const FOTOSERVICE_JOB_CODES = ['GW-A', 'GW-B', 'GW-FR', 'VFW-W1', 'VFW-W2']
 const VAPID_PUBLIC_KEY = 'BHWTo7bjAcsBLL9HbvJczCDcBj78aB4xv1atwN_CaaF7-PF5o-6WPKguMaRC6_-L_d0kiLNQTaxCUBqr6x4yIfU'
 const SESSION_KEY = 'wt_employee_id'
 const AUTH_EMAIL_DOMAIN = 'mitarbeiter.autowerk.app'
@@ -213,7 +215,7 @@ function todayLabel(){
 
 function recordPrice(r){
   const base = r.job_types.is_variable_price ? (r.custom_price || 0) : (r.job_types.price_eur || 0)
-  return base + (r.regiestunde||0) * REGIESTUNDE_RATE
+  return base + (r.regiestunde||0) * REGIESTUNDE_RATE + (r.fotoservice ? FOTOSERVICE_PRICE : 0)
 }
 
 function updateLogoutBtn(){
@@ -470,6 +472,13 @@ async function renderEmployeeDay(){
           ${SR_DELLE_PERFORMERS.map(p => `<option value="${p}">${p}</option>`).join('')}
         </select>
       </div>
+      <div id="fotoserviceWrap" style="display:none;">
+        <label>Fotoservice (+${FOTOSERVICE_PRICE.toFixed(2)} €)</label>
+        <select id="fotoserviceSelect">
+          <option value="nein">Nein</option>
+          <option value="ja">Ja</option>
+        </select>
+      </div>
       <button class="primary" id="addBtn" disabled>Auftrag hinzufügen</button>
     </div>
 
@@ -481,6 +490,7 @@ async function renderEmployeeDay(){
             <div><span class="code">${r.job_types.code}</span><span class="ref">${r.ref_no || ''}${r.performed_by ? ' · ' + r.performed_by : ''}</span></div>
             <div class="right">
               ${r.regiestunde ? `<span class="extra">+${r.regiestunde} Std</span>` : ''}
+              ${r.fotoservice ? `<span class="extra">Fotoservice</span>` : ''}
               <button class="del-btn" data-del="${r.id}" title="Löschen">×</button>
             </div>
           </div>
@@ -535,8 +545,10 @@ async function renderEmployeeDay(){
       document.getElementById('regiestundeWrap').style.display = selectedJobType.is_aufbereitung ? 'block' : 'none'
       document.getElementById('priceWrap').style.display = selectedJobType.is_variable_price ? 'block' : 'none'
       document.getElementById('performerWrap').style.display = selectedJobType.code === 'SR-Delle' ? 'block' : 'none'
+      document.getElementById('fotoserviceWrap').style.display = FOTOSERVICE_JOB_CODES.includes(selectedJobType.code) ? 'block' : 'none'
       if(!selectedJobType.is_aufbereitung) document.getElementById('regiestunde').value = ''
       if(selectedJobType.code !== 'SR-Delle') document.getElementById('performerSelect').value = ''
+      if(!FOTOSERVICE_JOB_CODES.includes(selectedJobType.code)) document.getElementById('fotoserviceSelect').value = 'nein'
       if(selectedJobType.is_quantity) document.getElementById('qtyInput').value = ''
       validateAdd()
     })
@@ -622,6 +634,9 @@ async function addRecord(){
   }
   if(selectedJobType.code === 'SR-Delle'){
     payload.performed_by = performerVal
+  }
+  if(FOTOSERVICE_JOB_CODES.includes(selectedJobType.code)){
+    payload.fotoservice = document.getElementById('fotoserviceSelect').value === 'ja'
   }
 
   const { error } = await supabase.from('records').insert(payload)
@@ -895,7 +910,7 @@ async function renderBossDashboard(){
   const rowsHtml = records.map(r => `
     <tr>
       <td>${r.employees.name}</td>
-      <td>${r.job_types.code}${r.job_types.is_mts ? ' (MTS)' : ''}${r.performed_by ? ' · ' + r.performed_by : ''}</td>
+      <td>${r.job_types.code}${r.job_types.is_mts ? ' (MTS)' : ''}${r.performed_by ? ' · ' + r.performed_by : ''}${r.fotoservice ? ' · Foto' : ''}</td>
       <td>${r.ref_no || '-'}</td>
       <td>${fmtEur(recordPrice(r))}</td>
     </tr>`).join('')
