@@ -664,7 +664,36 @@ async function getPushSubscriptionStatus(){
   if(!('serviceWorker' in navigator) || !('PushManager' in window)) return 'unsupported'
   const reg = await navigator.serviceWorker.ready
   const sub = await reg.pushManager.getSubscription()
-  return sub ? 'subscribed' : 'not-subscribed'
+  if(!sub) return 'not-subscribed'
+  // VAPID anahtarları yenilendiyse eski anahtarla oluşturulmuş abonelikler
+  // artık geçersizdir ama tarayıcıda kayıtlı kalmaya devam eder. Böyle bir
+  // uyuşmazlık tespit edilirse aboneliği otomatik temizleyip butonu tekrar
+  // gösteriyoruz — aksi halde buton hiç çıkmaz ama bildirim de gelmez.
+  try {
+    const currentKey = urlBase64ToUint8Array(VAPID_PUBLIC_KEY)
+    const subKey = sub.options && sub.options.applicationServerKey
+    if(subKey){
+      const subKeyArr = new Uint8Array(subKey)
+      const mismatch = subKeyArr.length !== currentKey.length || !subKeyArr.every((v,i)=>v===currentKey[i])
+      if(mismatch){
+        await sub.unsubscribe()
+        return 'not-subscribed'
+      }
+    }
+  } catch(e) { /* karşılaştırma desteklenmiyorsa mevcut durumu koru */ }
+  return 'subscribed'
+}
+
+async function resetPushSubscription(){
+  try {
+    const reg = await navigator.serviceWorker.ready
+    const sub = await reg.pushManager.getSubscription()
+    if(sub) await sub.unsubscribe()
+    showToast('Zurückgesetzt')
+    renderBossDashboard()
+  } catch(e){
+    showToast('Fehler: ' + e.message)
+  }
 }
 
 async function enablePushNotifications(){
@@ -722,7 +751,7 @@ async function renderBossDashboard(){
   const pushCardHtml = pushStatus === 'unsupported' ? '' : `
     <div class="card">
       ${pushStatus === 'subscribed'
-        ? '<div class="sub" style="color:var(--green);">✓ Tägliche Benachrichtigung (17:30) aktiv</div>'
+        ? '<div class="sub" style="color:var(--green);">✓ Tägliche Benachrichtigung (17:30) aktiv</div><button class="secondary" id="resetPushBtn" style="margin-top:10px;">🔄 Zurücksetzen</button>'
         : '<button class="secondary" id="enablePushBtn">🔔 Tägliche Benachrichtigung aktivieren</button>'}
     </div>
   `
@@ -924,6 +953,7 @@ async function renderBossDashboard(){
 function wireBossControls(){
   document.getElementById('refreshBtn')?.addEventListener('click', renderBossDashboard)
   document.getElementById('enablePushBtn')?.addEventListener('click', enablePushNotifications)
+  document.getElementById('resetPushBtn')?.addEventListener('click', resetPushSubscription)
   document.querySelectorAll('.range-chip[data-mode]').forEach(chip=>{
     chip.addEventListener('click', ()=>{
       bossRange.mode = chip.dataset.mode
