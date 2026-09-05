@@ -1,0 +1,99 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+<meta name="robots" content="noindex, nofollow">
+<title>2A1Z</title>
+<style>
+  html,body{margin:0;padding:0;}
+  body{
+    min-height:100vh; background:#16181B; color:#ECEDEF;
+    font-family:-apple-system,'Inter',sans-serif;
+    display:flex; align-items:center; justify-content:center;
+  }
+  .box{ width:100%; max-width:320px; padding:40px; }
+  input{
+    width:100%; background:#2F3338; border:1px solid #3A3F44; color:#ECEDEF;
+    font-size:16px; padding:14px; border-radius:8px; margin-bottom:14px; box-sizing:border-box;
+  }
+  button{
+    width:100%; padding:15px 20px; background:#4A7FB0; color:#fff; border:none;
+    border-radius:4px; font-size:15px; font-weight:600; cursor:pointer;
+  }
+  button:hover{ background:#6FA3D8; }
+  .lock{ font-size:32px; text-align:center; margin-bottom:18px; }
+  .toast{
+    position:fixed; bottom:20px; left:50%; transform:translateX(-50%);
+    background:#2F3338; border:1px solid #F5A623; color:#ECEDEF;
+    padding:12px 20px; border-radius:8px; font-size:14px; z-index:100;
+  }
+</style>
+</head>
+<body>
+<div class="box" id="box"></div>
+
+<script type="module">
+import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
+
+const SUPABASE_URL = "https://mfgofccidwmrqlyjbsvz.supabase.co"
+const SUPABASE_KEY = "sb_publishable_n5PXoej2lr_FQQVCjag0jw_EifWkYir"
+const supabase = createClient(SUPABASE_URL, SUPABASE_KEY)
+
+const AUTH_EMAIL_DOMAIN = 'mitarbeiter.autowerk.app'
+const SITE_GATE_PASSWORD = 'Autowerk2026'
+const SITE_GATE_KEY = 'wt_site_gate_ok'
+
+const box = document.getElementById('box')
+
+function showToast(msg){
+  const t = document.createElement('div')
+  t.className = 'toast'
+  t.textContent = msg
+  document.body.appendChild(t)
+  setTimeout(()=> t.remove(), 2500)
+}
+
+function renderGate(){
+  box.innerHTML = `
+    <div class="lock">🔒</div>
+    <input type="password" id="gatePassword" placeholder="Passwort">
+    <button id="gateBtn">Weiter</button>
+  `
+  const submit = () => {
+    if(document.getElementById('gatePassword').value === SITE_GATE_PASSWORD){
+      localStorage.setItem(SITE_GATE_KEY, '1')
+      renderAdminLogin()
+    } else { showToast('Falsches Passwort') }
+  }
+  document.getElementById('gateBtn').addEventListener('click', submit)
+  document.getElementById('gatePassword').addEventListener('keydown', (e)=>{ if(e.key === 'Enter') submit() })
+}
+
+function renderAdminLogin(){
+  box.innerHTML = `
+    <input type="text" id="adminUser" placeholder="Benutzername" autocomplete="off">
+    <input type="password" id="adminPassword" placeholder="Passwort">
+    <button id="adminLoginBtn">Anmelden</button>
+  `
+  const submit = async () => {
+    const username = document.getElementById('adminUser').value.trim()
+    const password = document.getElementById('adminPassword').value
+    if(!username || !password){ showToast('Bitte alles ausfüllen'); return }
+    const email = `${username.toLowerCase()}@${AUTH_EMAIL_DOMAIN}`
+    const { error } = await supabase.auth.signInWithPassword({ email, password })
+    if(error){ showToast('Falsche Zugangsdaten'); return }
+    window.location.href = '/'
+  }
+  document.getElementById('adminLoginBtn').addEventListener('click', submit)
+  document.getElementById('adminPassword').addEventListener('keydown', (e)=>{ if(e.key === 'Enter') submit() })
+}
+
+if(localStorage.getItem(SITE_GATE_KEY) === '1'){
+  renderAdminLogin()
+} else {
+  renderGate()
+}
+</script>
+</body>
+</html>
