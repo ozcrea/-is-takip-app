@@ -1118,7 +1118,9 @@ async function renderBossDashboard(){
         ${capPct !== null ? `
           <div class="cap-bar"><div class="cap-fill ${capPct>100?'over':''}" style="width:${Math.min(capPct,100)}%;"></div></div>
           <div class="sub" style="margin-top:4px;">Kapazität: %${capPct} (${Math.round(s.workedMinutes)} Min. Arbeit / ${declaredMinutes} Min. Anwesenheit)</div>
-        ` : ''}
+        ` : `
+          <div class="sub" style="margin-top:4px;">Arbeitszeit: ${Math.round(s.workedMinutes)} Min. (keine erfasste Anwesenheit, daher keine Kapazität %)</div>
+        `}
       </div>`
   }
 
