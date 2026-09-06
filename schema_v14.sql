@@ -20,18 +20,19 @@ alter table job_types add column if not exists is_internal boolean not null defa
 --    komisyon kuralına göre otomatik olarak MUAF olacak (bkz. index.html'de
 --    "if(r.job_types.is_mts) mtsRevenue += price" mantığı).
 --
---    ⚠️ duration_minutes: aşağıya SR-Lack (veya SR-Delle) ile AYNI değeri
---    yazın — bu değer, kapasite/performans hesaplamasında (bir çalışanın
---    beyan ettiği saatlere göre ne kadar doldurduğu) kullanılıyor. Örnek
---    olarak kontrol etmek için önce şunu çalıştırabilirsiniz:
---      select code, duration_minutes from job_types where code in ('SR-Lack','SR-Delle');
+--    duration_minutes bilinçli olarak NULL — SR-Lack ve SR-Delle'de de
+--    aynı şekilde NULL (Smart Repair işleri kapasite/performans hesabına
+--    hiç dahil edilmiyor), MTS Smart Rep için de aynı mantık geçerli.
+--    (index.html'deki "workedMinutes += duration_minutes + ..." toplamında
+--    NULL, JS'te sayısal olarak 0 gibi davranır — yani bu iş hiç kapasiteye
+--    eklenmez, NaN oluşmaz.)
 insert into job_types (code, name, is_mts, is_variable_price, duration_minutes, active, sort_order)
 values (
   'MTS-SR',
   'MTS Smart Rep',
   true,
   true,
-  60, -- ⚠️ BURAYA SR-Lack/SR-Delle İLE AYNI duration_minutes DEĞERİNİ YAZIN
+  null,
   true,
   (select coalesce(max(sort_order), 0) + 1 from job_types)
 );
