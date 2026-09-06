@@ -316,9 +316,15 @@ function jobFormHtml(prefix, qtyCounts){
   `
 }
 
-function validateJobForm(prefix, getSelected){
+// extraValid (isteğe bağlı): iş formu alanları dışında sağlanması gereken
+// ek bir koşul (örn. admin'in geçmişe kayıt formunda çalışan+tarih seçili
+// olması). Sağlanmadan "Auftrag hinzufügen" butonu etkinleşmez — böylece
+// admin formunda eksik alan varken buton tıklansa bile SESSİZCE hiçbir şey
+// olmaz izlenimi yerine, buton zaten devre dışı kalır.
+function validateJobForm(prefix, getSelected, extraValid){
   const $ = (id) => document.getElementById(prefix + id)
   const jt = getSelected()
+  const extraOk = extraValid ? extraValid() : true
   if(!jt){ $('AddBtn').disabled = true; return }
   let ok = true
   if(jt.is_quantity){
@@ -338,10 +344,10 @@ function validateJobForm(prefix, getSelected){
       ok = ok && !!$('MtsTypeSelect').value
     }
   }
-  $('AddBtn').disabled = !ok
+  $('AddBtn').disabled = !(ok && extraOk)
 }
 
-function wireJobForm(prefix, getSelected, setSelected){
+function wireJobForm(prefix, getSelected, setSelected, extraValid){
   const $ = (id) => document.getElementById(prefix + id)
   $('JobList').querySelectorAll('.job-btn[data-id]').forEach(btn=>{
     btn.addEventListener('click', ()=>{
@@ -361,14 +367,14 @@ function wireJobForm(prefix, getSelected, setSelected){
       if(jt.code !== 'MTS-SR') $('MtsTypeSelect').value = ''
       if(!FOTOSERVICE_JOB_CODES.includes(jt.code)) $('FotoserviceSelect').value = 'nein'
       if(jt.is_quantity) $('QtyInput').value = ''
-      validateJobForm(prefix, getSelected)
+      validateJobForm(prefix, getSelected, extraValid)
     })
   })
   ;['RefNo','QtyInput','CustomPrice'].forEach(id=>{
-    $(id).addEventListener('input', ()=>validateJobForm(prefix, getSelected))
+    $(id).addEventListener('input', ()=>validateJobForm(prefix, getSelected, extraValid))
   })
   ;['PerformerSelect','MtsTypeSelect'].forEach(id=>{
-    $(id).addEventListener('change', ()=>validateJobForm(prefix, getSelected))
+    $(id).addEventListener('change', ()=>validateJobForm(prefix, getSelected, extraValid))
   })
 }
 
@@ -970,13 +976,21 @@ async function renderBossDashboard(){
   const adminBackdateHtml = isHiddenAdmin ? `
     <div class="card" id="adminBackdateCard">
       <label>⏱ Geçmişe Kayıt Ekle (Admin)</label>
+      ${!currentEmployee.auth_user_id ? `
+        <div class="sub" style="color:var(--red);margin:-4px 0 14px;">
+          ⚠ Bu hesap henüz gerçek Supabase Auth'a bağlı değil (auth_user_id boş).
+          Kayıt eklemeyi denerseniz sunucu güvenlik kuralı (RLS) isteği
+          reddedebilir. Migrate-employees fonksiyonunu bu hesap için de
+          çalıştırmanız gerekebilir.
+        </div>
+      ` : ''}
       <label style="margin-top:0;">Mitarbeiter</label>
       <select id="bkEmployeeSelect">
         <option value="">Auswählen...</option>
         ${employees.filter(e=>!e.hidden_from_login).map(e => `<option value="${e.id}">${e.name} (${e.akt_no})</option>`).join('')}
       </select>
       <label>Datum</label>
-      <input type="date" id="bkDate" max="${todayStr()}">
+      <input type="date" id="bkDate" max="${localDateStr(new Date())}">
       ${jobFormHtml('bk', {})}
     </div>
   ` : ''
@@ -1294,13 +1308,20 @@ function wireAdminBackdateForm(){
   const card = document.getElementById('adminBackdateCard')
   if(!card) return
   backdateSelectedJobType = null
-  wireJobForm('bk', ()=>backdateSelectedJobType, (jt)=>{ backdateSelectedJobType = jt })
+  const extraValid = () => !!document.getElementById('bkEmployeeSelect').value && !!document.getElementById('bkDate').value
+  wireJobForm('bk', ()=>backdateSelectedJobType, (jt)=>{ backdateSelectedJobType = jt }, extraValid)
+  document.getElementById('bkEmployeeSelect').addEventListener('change', ()=>validateJobForm('bk', ()=>backdateSelectedJobType, extraValid))
+  document.getElementById('bkDate').addEventListener('change', ()=>validateJobForm('bk', ()=>backdateSelectedJobType, extraValid))
   document.getElementById('bkAddBtn').addEventListener('click', async ()=>{
     const empId = document.getElementById('bkEmployeeSelect').value
     const dateVal = document.getElementById('bkDate').value
     if(!empId){ showToast('Bitte Mitarbeiter auswählen'); return }
     if(!dateVal){ showToast('Bitte Datum auswählen'); return }
-    if(dateVal > todayStr()){ showToast('Datum darf nicht in der Zukunft liegen'); return }
+    // localDateStr() kullanılıyor (todayStr() DEĞİL) — todayStr() UTC tarihini
+    // döndürüyor; Almanya saatiyle 00:00-02:00 arası UTC hâlâ "dün" olabilir,
+    // bu da bugünün tarihini yanlışlıkla "gelecekte" gibi reddedebilirdi.
+    const localToday = localDateStr(new Date())
+    if(dateVal > localToday){ showToast('Datum darf nicht in der Zukunft liegen'); return }
     const jt = backdateSelectedJobType
     if(!jt){ showToast('Bitte Auftragsart auswählen'); return }
     const values = readJobFormValues('bk', jt)
@@ -1312,7 +1333,7 @@ function wireAdminBackdateForm(){
       dateStr: dateVal,
       createdAtOverride
     })
-    if(error){ showToast('Fehler: ' + error.message); return }
+    if(error){ showToast('Fehler: ' + error.message); console.error('Geçmişe kayıt ekleme hatası:', error); return }
     showToast('Rückwirkender Eintrag für ' + dateVal + ' gespeichert')
     backdateSelectedJobType = null
     renderBossDashboard()
