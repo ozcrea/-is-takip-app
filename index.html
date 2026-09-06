@@ -458,6 +458,9 @@ async function insertJobRecord({ jobType, employeeId, values, dateStr, createdAt
       job_type_id: fotoJobType.id,
       ref_no: values.refNo,
       regiestunde: null,
+      fotoservice: false, // NOT NULL kolon — bulk insert'te satırlar farklı
+                          // key setine sahipse eksik alan DEFAULT yerine
+                          // açıkça null gönderilir, bu yüzden burada bilerek belirtiliyor.
       ...createdAtField
     })
   }
