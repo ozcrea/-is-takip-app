@@ -102,6 +102,8 @@
   .range-custom > div{ flex:1; }
   .range-custom input{ margin-bottom:0; }
   .search-wrap{ margin-top:10px; }
+  .table-wrap{ overflow-x:auto; }
+  .table-wrap table{ min-width:560px; }
 
   .landing-screen{ position:fixed; inset:0; background:#16181B; display:flex; align-items:center; justify-content:center; z-index:50; }
   .landing-screen .stage{ display:flex; flex-direction:column; align-items:center; gap:52px; width:100%; max-width:420px; padding:40px; }
@@ -121,6 +123,14 @@
   .gate-screen{ position:fixed; inset:0; background:#16181B; z-index:100; display:flex; align-items:center; justify-content:center; }
   .gate-screen .box{ width:100%; max-width:300px; padding:40px; text-align:center; }
   .gate-screen .lock{ font-size:32px; margin-bottom:18px; }
+
+  @media print{
+    header, nav, .refresh, #pdfBtn, .del-btn, .range-chips, .search-wrap,
+    #adminBackdateCard, input, select, #employeeFilterSelect{ display:none !important; }
+    body{ background:#fff; color:#000; }
+    .card{ border:1px solid #999; break-inside:avoid; background:#fff; }
+    .amount, .revenue-total, .stat .n{ color:#000 !important; }
+  }
 </style>
 </head>
 <body>
@@ -155,6 +165,10 @@ const FOTOSERVICE_JOB_CODES = ['GW-A', 'GW-B', 'GW-FR', 'VFW-W1', 'VFW-W2']
 const VAPID_PUBLIC_KEY = 'BHWTo7bjAcsBLL9HbvJczCDcBj78aB4xv1atwN_CaaF7-PF5o-6WPKguMaRC6_-L_d0kiLNQTaxCUBqr6x4yIfU'
 const SESSION_KEY = 'wt_employee_id'
 const AUTH_EMAIL_DOMAIN = 'mitarbeiter.autowerk.app'
+
+// Fotoservice, kaydı giren çalışan kim olursa olsun, o günkü şubeye
+// atanan SABİT kişiye yazılır (bkz. insertJobRecord).
+const BRANCH_FOTOSERVICE_OWNER = { 'Ausschläger Weg': 'A3A', 'Wiesendamm': 'W1S', 'Horn': 'H1A' }
 
 // Site geneli erişim şifresi. Bu SADECE tarayıcı tarafında kontrol edilen
 // bir engel — sayfa kaynağını görebilen biri şifreyi görebilir. Gerçek
@@ -214,8 +228,20 @@ function todayLabel(){
 }
 
 function recordPrice(r){
+  // Not: Fotoservice geliri artık bu kayda değil, ayrı bir FOTOSERVICE
+  // kaydına (şubenin sabit sorumlusuna) yazılıyor — bkz. insertJobRecord().
+  // 'fotoservice' alanı burada sadece bilgi amaçlı bir etikettir, fiyata eklenmez.
   const base = r.job_types.is_variable_price ? (r.custom_price || 0) : (r.job_types.price_eur || 0)
-  return base + (r.regiestunde||0) * REGIESTUNDE_RATE + (r.fotoservice ? FOTOSERVICE_PRICE : 0)
+  return base + (r.regiestunde||0) * REGIESTUNDE_RATE
+}
+
+function localDateStr(iso){
+  const d = new Date(iso)
+  return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`
+}
+
+function visibleJobTypes(){
+  return jobTypes.filter(j => !j.is_internal)
 }
 
 function updateLogoutBtn(){
@@ -227,6 +253,211 @@ async function loadStaticData(){
   const { data: jt } = await supabase.from('job_types').select('*').eq('active', true).order('sort_order')
   employees = emp || []
   jobTypes = jt || []
+}
+
+// ============ ORTAK İŞ (AUFTRAG) FORMU ============
+// Çalışan ekranı ("Neuen Auftrag hinzufügen") ve admin'in "Geçmişe Kayıt
+// Ekle" formu aynı alanları/aynı doğrulama+kayıt mantığını kullanır. Bu
+// bölüm ikisi arasında paylaşılan, prefix'lenmiş (id çakışmasını önlemek
+// için) yardımcı fonksiyonları içerir.
+
+function jobFormHtml(prefix, qtyCounts){
+  qtyCounts = qtyCounts || {}
+  return `
+    <div class="job-list" id="${prefix}JobList">
+      ${visibleJobTypes().map(j => `
+        <div class="job-btn" data-id="${j.id}">
+          <span class="code">${j.code}${j.is_mts ? '<span class="mts-tag">MTS</span>' : ''}${j.is_quantity ? '<span class="qty-tag">Stück</span>' : ''}</span>
+          ${j.is_quantity ? `<span class="qty-count">${qtyCounts[j.id]||0}× heute</span>` : ''}
+        </div>`).join('')}
+    </div>
+    <div id="${prefix}RefNoWrap">
+      <label>AKT-Nummer oder Fahrgestellnummer</label>
+      <input type="text" id="${prefix}RefNo" placeholder="z.B. AKT121212 oder WVW...">
+    </div>
+    <div id="${prefix}QtyWrap" style="display:none;">
+      <label>Anzahl</label>
+      <input type="number" id="${prefix}QtyInput" placeholder="z.B. 20" min="1" step="1">
+    </div>
+    <div id="${prefix}PriceWrap" style="display:none;">
+      <label>Preis (€)</label>
+      <input type="number" id="${prefix}CustomPrice" placeholder="z.B. 75" step="0.01" min="0">
+    </div>
+    <div id="${prefix}MtsTypeWrap" style="display:none;">
+      <label>Art</label>
+      <select id="${prefix}MtsTypeSelect">
+        <option value="">Auswählen...</option>
+        <option value="Lack">Lack</option>
+        <option value="Delle">Delle</option>
+      </select>
+    </div>
+    <div id="${prefix}RegiestundeWrap" style="display:none;">
+      <label>Regiestunde Aufbereitung (falls zutreffend, Stunden)</label>
+      <select id="${prefix}Regiestunde">
+        <option value="">Keine</option>
+        ${Array.from({length:10},(_,i)=>i+1).map(n=>`<option value="${n}">${n} Std</option>`).join('')}
+      </select>
+    </div>
+    <div id="${prefix}PerformerWrap" style="display:none;">
+      <label>Wer hat die Arbeit ausgeführt?</label>
+      <select id="${prefix}PerformerSelect">
+        <option value="">Auswählen...</option>
+        ${SR_DELLE_PERFORMERS.map(p => `<option value="${p}">${p}</option>`).join('')}
+      </select>
+    </div>
+    <div id="${prefix}FotoserviceWrap" style="display:none;">
+      <label>Fotoservice (+${FOTOSERVICE_PRICE.toFixed(2)} €)</label>
+      <select id="${prefix}FotoserviceSelect">
+        <option value="nein">Nein</option>
+        <option value="ja">Ja</option>
+      </select>
+    </div>
+    <button class="primary" id="${prefix}AddBtn" disabled>Auftrag hinzufügen</button>
+  `
+}
+
+function validateJobForm(prefix, getSelected){
+  const $ = (id) => document.getElementById(prefix + id)
+  const jt = getSelected()
+  if(!jt){ $('AddBtn').disabled = true; return }
+  let ok = true
+  if(jt.is_quantity){
+    const qtyVal = $('QtyInput').value
+    ok = qtyVal && parseInt(qtyVal) > 0
+  } else {
+    const refNo = $('RefNo').value.trim()
+    ok = !!refNo
+    if(jt.is_variable_price){
+      const priceVal = $('CustomPrice').value
+      ok = ok && priceVal && parseFloat(priceVal) > 0
+    }
+    if(jt.code === 'SR-Delle'){
+      ok = ok && !!$('PerformerSelect').value
+    }
+    if(jt.code === 'MTS-SR'){
+      ok = ok && !!$('MtsTypeSelect').value
+    }
+  }
+  $('AddBtn').disabled = !ok
+}
+
+function wireJobForm(prefix, getSelected, setSelected){
+  const $ = (id) => document.getElementById(prefix + id)
+  $('JobList').querySelectorAll('.job-btn[data-id]').forEach(btn=>{
+    btn.addEventListener('click', ()=>{
+      $('JobList').querySelectorAll('.job-btn[data-id]').forEach(b=>b.classList.remove('selected'))
+      btn.classList.add('selected')
+      const jt = jobTypes.find(j => j.id === btn.dataset.id)
+      setSelected(jt)
+      $('RefNoWrap').style.display = jt.is_quantity ? 'none' : 'block'
+      $('QtyWrap').style.display = jt.is_quantity ? 'block' : 'none'
+      $('RegiestundeWrap').style.display = jt.is_aufbereitung ? 'block' : 'none'
+      $('PriceWrap').style.display = jt.is_variable_price ? 'block' : 'none'
+      $('PerformerWrap').style.display = jt.code === 'SR-Delle' ? 'block' : 'none'
+      $('MtsTypeWrap').style.display = jt.code === 'MTS-SR' ? 'block' : 'none'
+      $('FotoserviceWrap').style.display = FOTOSERVICE_JOB_CODES.includes(jt.code) ? 'block' : 'none'
+      if(!jt.is_aufbereitung) $('Regiestunde').value = ''
+      if(jt.code !== 'SR-Delle') $('PerformerSelect').value = ''
+      if(jt.code !== 'MTS-SR') $('MtsTypeSelect').value = ''
+      if(!FOTOSERVICE_JOB_CODES.includes(jt.code)) $('FotoserviceSelect').value = 'nein'
+      if(jt.is_quantity) $('QtyInput').value = ''
+      validateJobForm(prefix, getSelected)
+    })
+  })
+  ;['RefNo','QtyInput','CustomPrice'].forEach(id=>{
+    $(id).addEventListener('input', ()=>validateJobForm(prefix, getSelected))
+  })
+  ;['PerformerSelect','MtsTypeSelect'].forEach(id=>{
+    $(id).addEventListener('change', ()=>validateJobForm(prefix, getSelected))
+  })
+}
+
+function readJobFormValues(prefix, jt){
+  const $ = (id) => document.getElementById(prefix + id)
+  if(jt.is_quantity){
+    return { qty: parseInt($('QtyInput').value) }
+  }
+  return {
+    refNo: $('RefNo').value.trim(),
+    regiestunde: $('Regiestunde').value ? parseInt($('Regiestunde').value) : null,
+    customPrice: $('CustomPrice').value ? parseFloat($('CustomPrice').value) : null,
+    performedBy: $('PerformerSelect').value || null,
+    mtsSubtype: $('MtsTypeSelect').value || null,
+    fotoservice: $('FotoserviceSelect').value === 'ja'
+  }
+}
+
+async function lookupBranchForDate(employeeId, dateStr){
+  const { data } = await supabase.from('daily_hours').select('branch').eq('employee_id', employeeId).eq('work_date', dateStr).maybeSingle()
+  return data?.branch || null
+}
+
+// Merkezi kayıt ekleme fonksiyonu — hem çalışanın kendi girişi hem de
+// admin'in geçmişe dönük girişi bunu kullanır. Fotoservice = Ja seçiliyse,
+// ana işin kendi süresi/fiyatı girene ait kalır; Fotoservice'in 8 dakikası
+// ve 9,88 €'su ayrı bir FOTOSERVICE kaydı olarak, o günkü şubenin sabit
+// sorumlusuna (BRANCH_FOTOSERVICE_OWNER) yazılır.
+async function insertJobRecord({ jobType, employeeId, values, dateStr, createdAtOverride }){
+  const createdAtField = createdAtOverride ? { created_at: createdAtOverride } : {}
+
+  if(jobType.is_quantity){
+    const rows = Array.from({ length: values.qty }, () => ({
+      employee_id: employeeId,
+      job_type_id: jobType.id,
+      ref_no: null,
+      regiestunde: null,
+      ...createdAtField
+    }))
+    const { error } = await supabase.from('records').insert(rows)
+    return { error, count: values.qty }
+  }
+
+  const wantsFotoservice = FOTOSERVICE_JOB_CODES.includes(jobType.code) && values.fotoservice
+  let ownerEmployeeId = null
+
+  if(wantsFotoservice){
+    const branch = await lookupBranchForDate(employeeId, dateStr)
+    const ownerAktNo = branch && BRANCH_FOTOSERVICE_OWNER[branch]
+    if(!ownerAktNo){
+      return { error: { message: 'Für diesen Tag ist keine Filiale hinterlegt — Fotoservice kann nicht zugeordnet werden.' } }
+    }
+    const owner = employees.find(e => e.akt_no === ownerAktNo)
+    if(!owner){
+      return { error: { message: `Fotoservice-Empfänger (${ownerAktNo}) wurde nicht gefunden.` } }
+    }
+    ownerEmployeeId = owner.id
+  }
+
+  const payload = {
+    employee_id: employeeId,
+    job_type_id: jobType.id,
+    ref_no: values.refNo,
+    regiestunde: values.regiestunde,
+    ...createdAtField
+  }
+  if(jobType.is_variable_price) payload.custom_price = values.customPrice
+  if(jobType.code === 'SR-Delle') payload.performed_by = values.performedBy
+  if(jobType.code === 'MTS-SR') payload.mts_subtype = values.mtsSubtype
+  if(FOTOSERVICE_JOB_CODES.includes(jobType.code)) payload.fotoservice = values.fotoservice
+
+  const rowsToInsert = [payload]
+
+  if(wantsFotoservice){
+    const fotoJobType = jobTypes.find(j => j.code === 'FOTOSERVICE')
+    if(!fotoJobType){
+      return { error: { message: 'FOTOSERVICE Auftragsart fehlt in der Datenbank (siehe schema_v14.sql).' } }
+    }
+    rowsToInsert.push({
+      employee_id: ownerEmployeeId,
+      job_type_id: fotoJobType.id,
+      ref_no: values.refNo,
+      regiestunde: null,
+      ...createdAtField
+    })
+  }
+
+  const { error } = await supabase.from('records').insert(rowsToInsert)
+  return { error, count: 1 }
 }
 
 // ============ SİTE GENELİ ŞİFRE KAPISI ============
@@ -420,6 +651,8 @@ async function renderEmployeeDay(){
       <div style="font-weight:600;font-size:16px;">${currentEmployee.name} (${currentEmployee.akt_no})</div>
     </div>
 
+    <button class="secondary" id="monthlyReportBtn" style="margin-bottom:14px;">📅 Monatsbericht</button>
+
     <div class="card">
       <label>Wie viele Stunden hast du heute gearbeitet (ohne Pause)?</label>
       ${savedHours !== null ? `
@@ -439,47 +672,7 @@ async function renderEmployeeDay(){
 
     <div class="card">
       <label>Neuen Auftrag hinzufügen</label>
-      <div class="job-list" id="jobList">
-        ${jobTypes.map(j => `
-          <div class="job-btn" data-id="${j.id}">
-            <span class="code">${j.code}${j.is_mts ? '<span class="mts-tag">MTS</span>' : ''}${j.is_quantity ? '<span class="qty-tag">Stück</span>' : ''}</span>
-            ${j.is_quantity ? `<span class="qty-count">${qtyCounts[j.id]||0}× heute</span>` : ''}
-          </div>`).join('')}
-      </div>
-      <div id="refNoWrap">
-        <label>AKT-Nummer oder Fahrgestellnummer</label>
-        <input type="text" id="refNo" placeholder="z.B. AKT121212 oder WVW...">
-      </div>
-      <div id="qtyWrap" style="display:none;">
-        <label>Anzahl</label>
-        <input type="number" id="qtyInput" placeholder="z.B. 20" min="1" step="1">
-      </div>
-      <div id="priceWrap" style="display:none;">
-        <label>Preis (€)</label>
-        <input type="number" id="customPrice" placeholder="z.B. 75" step="0.01" min="0">
-      </div>
-      <div id="regiestundeWrap" style="display:none;">
-        <label>Regiestunde Aufbereitung (falls zutreffend, Stunden)</label>
-        <select id="regiestunde">
-          <option value="">Keine</option>
-          ${Array.from({length:10},(_,i)=>i+1).map(n=>`<option value="${n}">${n} Std</option>`).join('')}
-        </select>
-      </div>
-      <div id="performerWrap" style="display:none;">
-        <label>Wer hat die Arbeit ausgeführt?</label>
-        <select id="performerSelect">
-          <option value="">Auswählen...</option>
-          ${SR_DELLE_PERFORMERS.map(p => `<option value="${p}">${p}</option>`).join('')}
-        </select>
-      </div>
-      <div id="fotoserviceWrap" style="display:none;">
-        <label>Fotoservice (+${FOTOSERVICE_PRICE.toFixed(2)} €)</label>
-        <select id="fotoserviceSelect">
-          <option value="nein">Nein</option>
-          <option value="ja">Ja</option>
-        </select>
-      </div>
-      <button class="primary" id="addBtn" disabled>Auftrag hinzufügen</button>
+      ${jobFormHtml('emp', qtyCounts)}
     </div>
 
     <div class="card">
@@ -487,7 +680,7 @@ async function renderEmployeeDay(){
       <div class="entry-list" id="entryList">
         ${todaysRecords.length === 0 ? '<div class="empty">Noch keine Einträge</div>' : todaysRecords.map(r => `
           <div class="entry">
-            <div><span class="code">${r.job_types.code}</span><span class="ref">${r.ref_no || ''}${r.performed_by ? ' · ' + r.performed_by : ''}</span></div>
+            <div><span class="code">${r.job_types.code}</span><span class="ref">${r.ref_no || ''}${r.performed_by ? ' · ' + r.performed_by : ''}${r.mts_subtype ? ' · ' + r.mts_subtype : ''}</span></div>
             <div class="right">
               ${r.regiestunde ? `<span class="extra">+${r.regiestunde} Std</span>` : ''}
               ${r.fotoservice ? `<span class="extra">Fotoservice</span>` : ''}
@@ -535,24 +728,10 @@ async function renderEmployeeDay(){
     if(btn) btn.disabled = !(val && parseFloat(val) > 0 && pickedBranch)
   }
 
-  document.querySelectorAll('.job-btn[data-id]').forEach(btn=>{
-    btn.addEventListener('click', ()=>{
-      document.querySelectorAll('.job-btn[data-id]').forEach(b=>b.classList.remove('selected'))
-      btn.classList.add('selected')
-      selectedJobType = jobTypes.find(j => j.id === btn.dataset.id)
-      document.getElementById('refNoWrap').style.display = selectedJobType.is_quantity ? 'none' : 'block'
-      document.getElementById('qtyWrap').style.display = selectedJobType.is_quantity ? 'block' : 'none'
-      document.getElementById('regiestundeWrap').style.display = selectedJobType.is_aufbereitung ? 'block' : 'none'
-      document.getElementById('priceWrap').style.display = selectedJobType.is_variable_price ? 'block' : 'none'
-      document.getElementById('performerWrap').style.display = selectedJobType.code === 'SR-Delle' ? 'block' : 'none'
-      document.getElementById('fotoserviceWrap').style.display = FOTOSERVICE_JOB_CODES.includes(selectedJobType.code) ? 'block' : 'none'
-      if(!selectedJobType.is_aufbereitung) document.getElementById('regiestunde').value = ''
-      if(selectedJobType.code !== 'SR-Delle') document.getElementById('performerSelect').value = ''
-      if(!FOTOSERVICE_JOB_CODES.includes(selectedJobType.code)) document.getElementById('fotoserviceSelect').value = 'nein'
-      if(selectedJobType.is_quantity) document.getElementById('qtyInput').value = ''
-      validateAdd()
-    })
-  })
+  selectedJobType = null
+  wireJobForm('emp', ()=>selectedJobType, (jt)=>{ selectedJobType = jt })
+  document.getElementById('empAddBtn').addEventListener('click', addRecord)
+  document.getElementById('monthlyReportBtn').addEventListener('click', ()=>renderEmployeeMonthlyReport())
   document.querySelectorAll('[data-del]').forEach(btn=>{
     btn.addEventListener('click', async ()=>{
       if(!confirm('Diesen Eintrag löschen?')) return
@@ -562,11 +741,6 @@ async function renderEmployeeDay(){
       renderEmployeeDay()
     })
   })
-  document.getElementById('refNo').addEventListener('input', validateAdd)
-  document.getElementById('qtyInput').addEventListener('input', validateAdd)
-  document.getElementById('customPrice').addEventListener('input', validateAdd)
-  document.getElementById('performerSelect').addEventListener('change', validateAdd)
-  document.getElementById('addBtn').addEventListener('click', addRecord)
 }
 
 async function saveHours(num, branch){
@@ -581,69 +755,98 @@ async function saveHours(num, branch){
   renderEmployeeDay()
 }
 
-function validateAdd(){
-  if(!selectedJobType){ document.getElementById('addBtn').disabled = true; return }
-  let ok = true
-  if(selectedJobType.is_quantity){
-    const qtyVal = document.getElementById('qtyInput').value
-    ok = qtyVal && parseInt(qtyVal) > 0
-  } else {
-    const refNo = document.getElementById('refNo').value.trim()
-    ok = !!refNo
-    if(selectedJobType.is_variable_price){
-      const priceVal = document.getElementById('customPrice').value
-      ok = ok && priceVal && parseFloat(priceVal) > 0
-    }
-    if(selectedJobType.code === 'SR-Delle'){
-      ok = ok && document.getElementById('performerSelect').value
-    }
-  }
-  document.getElementById('addBtn').disabled = !ok
-}
-
 async function addRecord(){
-  if(selectedJobType.is_quantity){
-    const qty = parseInt(document.getElementById('qtyInput').value)
-    const rows = Array.from({ length: qty }, () => ({
-      employee_id: currentEmployee.id,
-      job_type_id: selectedJobType.id,
-      ref_no: null,
-      regiestunde: null
-    }))
-    const { error } = await supabase.from('records').insert(rows)
-    if(error){ showToast('Fehler: ' + error.message); return }
-    showToast(selectedJobType.code + ' ×' + qty + ' hinzugefügt')
-    selectedJobType = null
-    renderEmployeeDay()
-    return
-  }
-
-  const refNo = document.getElementById('refNo').value.trim()
-  const regVal = document.getElementById('regiestunde').value
-  const priceVal = document.getElementById('customPrice').value
-  const performerVal = document.getElementById('performerSelect').value
-
-  const payload = {
-    employee_id: currentEmployee.id,
-    job_type_id: selectedJobType.id,
-    ref_no: refNo,
-    regiestunde: regVal ? parseInt(regVal) : null
-  }
-  if(selectedJobType.is_variable_price){
-    payload.custom_price = parseFloat(priceVal)
-  }
-  if(selectedJobType.code === 'SR-Delle'){
-    payload.performed_by = performerVal
-  }
-  if(FOTOSERVICE_JOB_CODES.includes(selectedJobType.code)){
-    payload.fotoservice = document.getElementById('fotoserviceSelect').value === 'ja'
-  }
-
-  const { error } = await supabase.from('records').insert(payload)
+  const jt = selectedJobType
+  const values = readJobFormValues('emp', jt)
+  const { error, count } = await insertJobRecord({
+    jobType: jt,
+    employeeId: currentEmployee.id,
+    values,
+    dateStr: todayStr()
+  })
   if(error){ showToast('Fehler: ' + error.message); return }
-  showToast('Auftrag hinzugefügt')
+  showToast(jt.is_quantity ? (jt.code + ' ×' + count + ' hinzugefügt') : 'Auftrag hinzugefügt')
   selectedJobType = null
   renderEmployeeDay()
+}
+
+// ============ ÇALIŞAN — AYLIK DETAYLI RAPOR ============
+
+async function renderEmployeeMonthlyReport(monthStr){
+  main.innerHTML = `<div class="empty">Lädt...</div>`
+  monthStr = monthStr || todayStr().slice(0,7)
+  const [y, m] = monthStr.split('-').map(Number)
+  const startDate = `${monthStr}-01`
+  const lastDay = new Date(y, m, 0).getDate()
+  const endDate = `${monthStr}-${String(lastDay).padStart(2,'0')}`
+
+  const [hoursRes, recordsRes] = await Promise.all([
+    supabase.from('daily_hours').select('*').eq('employee_id', currentEmployee.id).gte('work_date', startDate).lte('work_date', endDate).order('work_date'),
+    supabase.from('records').select('*, job_types(code, name, is_mts, is_variable_price, price_eur)').eq('employee_id', currentEmployee.id).gte('created_at', startOfDayISO(startDate)).lt('created_at', endOfDayISO(endDate)).order('created_at')
+  ])
+
+  const hoursByDay = {}
+  ;(hoursRes.data||[]).forEach(h=>{ hoursByDay[h.work_date] = Number(h.hours) })
+
+  const records = recordsRes.data || []
+  const recordsByDay = {}
+  records.forEach(r=>{
+    const d = localDateStr(r.created_at)
+    if(!recordsByDay[d]) recordsByDay[d] = []
+    recordsByDay[d].push(r)
+  })
+
+  const allDays = Array.from(new Set([...Object.keys(hoursByDay), ...Object.keys(recordsByDay)])).sort()
+
+  let totalHours = 0, normal = 0, mts = 0, privat = 0
+  Object.values(hoursByDay).forEach(h => totalHours += h)
+  records.forEach(r=>{
+    const price = recordPrice(r)
+    if(r.job_types.is_mts) mts += price
+    else if(r.job_types.code === 'Privat') privat += price
+    else normal += price
+  })
+  const netto = normal * 0.75 + mts + privat
+
+  const dayRowsHtml = allDays.length ? allDays.map(d=>{
+    const recs = recordsByDay[d] || []
+    const jobsLabel = recs.length ? recs.map(r=>r.job_types.code).join(', ') : '—'
+    return `
+      <div class="summary-row">
+        <div class="top-row">
+          <div>
+            <div class="name">${d}</div>
+            <div class="sub">${jobsLabel}</div>
+          </div>
+          <div class="stat">
+            <span class="n">${hoursByDay[d] !== undefined ? hoursByDay[d] + ' Std' : '-'}</span>
+            <span class="label">${recs.length} Aufträge</span>
+          </div>
+        </div>
+      </div>`
+  }).join('') : '<div class="empty">Keine Daten in diesem Monat</div>'
+
+  main.innerHTML = `
+    <button class="secondary" id="backToDayBtn" style="margin-bottom:14px;">← Zurück</button>
+    <div class="card">
+      <label>Monat wählen</label>
+      <input type="month" id="reportMonthInput" value="${monthStr}" max="${todayStr().slice(0,7)}">
+    </div>
+    <div class="card">
+      <label>${monthStr} — Zusammenfassung</label>
+      <div class="revenue-total">${fmtEur(netto)}</div>
+      <div class="revenue-total-net" style="margin-bottom:8px;">Netto Umsatz (Normal 25% abgezogen)</div>
+      <div class="sub" style="text-align:center;">${records.length} Aufträge · ${totalHours} Std insgesamt</div>
+    </div>
+    <div class="card">
+      <label>Tag für Tag</label>
+      ${dayRowsHtml}
+    </div>
+  `
+  document.getElementById('backToDayBtn').addEventListener('click', renderEmployeeDay)
+  document.getElementById('reportMonthInput').addEventListener('change', (e)=>{
+    renderEmployeeMonthlyReport(e.target.value)
+  })
 }
 
 // ============ ŞEF PANELİ (CHEF-BEREICH) ============
@@ -763,6 +966,21 @@ async function renderBossDashboard(){
   const allRecords = recordsRes.data || []
   const hours = hoursRes.data || []
 
+  const isHiddenAdmin = !!(currentEmployee?.is_admin && currentEmployee?.hidden_from_login)
+  const adminBackdateHtml = isHiddenAdmin ? `
+    <div class="card" id="adminBackdateCard">
+      <label>⏱ Geçmişe Kayıt Ekle (Admin)</label>
+      <label style="margin-top:0;">Mitarbeiter</label>
+      <select id="bkEmployeeSelect">
+        <option value="">Auswählen...</option>
+        ${employees.filter(e=>!e.hidden_from_login).map(e => `<option value="${e.id}">${e.name} (${e.akt_no})</option>`).join('')}
+      </select>
+      <label>Datum</label>
+      <input type="date" id="bkDate" max="${todayStr()}">
+      ${jobFormHtml('bk', {})}
+    </div>
+  ` : ''
+
   const pushCardHtml = pushStatus === 'unsupported' ? '' : `
     <div class="card">
       ${pushStatus === 'subscribed'
@@ -810,14 +1028,23 @@ async function renderBossDashboard(){
 
   const search = (bossRange.search || '').trim().toLowerCase()
   const branchFilter = bossRange.branchFilter || ''
+  const employeeFilter = bossRange.employeeFilter || ''
   let records = search ? allRecords.filter(r => (r.ref_no||'').toLowerCase().includes(search)) : allRecords
   if(branchFilter){
     records = records.filter(r => branchMap[r.employees.akt_no] === branchFilter)
+  }
+  // HATA DÜZELTMESİ: çalışan filtresi artık Zeitraum ile birlikte TÜM
+  // rapor bölümlerine (toplamlar, şube dağılımı, tablo) uygulanıyor —
+  // önceden sadece "Zusammenfassung pro Mitarbeiter" kartını etkiliyordu.
+  if(employeeFilter){
+    records = records.filter(r => r.employees.akt_no === employeeFilter)
   }
 
   if(allRecords.length === 0){
     main.innerHTML = `
       <button class="refresh" id="refreshBtn">↻ Aktualisieren</button>
+      <button class="refresh" id="pdfBtn">📄 Als PDF speichern</button>
+      ${adminBackdateHtml}
       ${pushCardHtml}
       ${rangeHeaderHtml}
       <div class="empty"><p class="big">Keine Aufträge in diesem Zeitraum</p></div>`
@@ -878,7 +1105,6 @@ async function renderBossDashboard(){
       </div>`
   }
 
-  const employeeFilter = bossRange.employeeFilter || ''
   const summaryEntries = Object.values(summary).sort((a,b)=>b.revenue-a.revenue)
   let summaryHtml
   if(!employeeFilter){
@@ -910,13 +1136,59 @@ async function renderBossDashboard(){
   const rowsHtml = records.map(r => `
     <tr>
       <td>${r.employees.name}</td>
-      <td>${r.job_types.code}${r.job_types.is_mts ? ' (MTS)' : ''}${r.performed_by ? ' · ' + r.performed_by : ''}${r.fotoservice ? ' · Foto' : ''}</td>
+      <td>${r.job_types.code}${r.job_types.is_mts ? ' (MTS)' : ''}${r.mts_subtype ? ' · ' + r.mts_subtype : ''}${r.performed_by ? ' · ' + r.performed_by : ''}${r.fotoservice ? ' · Foto' : ''}</td>
       <td>${r.ref_no || '-'}</td>
       <td>${fmtEur(recordPrice(r))}</td>
     </tr>`).join('')
 
+  // KAPSAMLI ZAMAN BAZLI RAPORLAMA: seçilen Zeitraum birden fazla gün
+  // kapsıyorsa (Woche/Monat/özel aralık), gün gün kırılım tablosu.
+  let dailyBreakdownHtml = ''
+  if(start !== end){
+    const byDate = {}
+    records.forEach(r=>{
+      const d = localDateStr(r.created_at)
+      if(!byDate[d]) byDate[d] = { normal:0, mts:0, privat:0, branch: Object.fromEntries(BRANCHES.map(b=>[b,0])) }
+      const price = recordPrice(r)
+      if(r.job_types.is_mts) byDate[d].mts += price
+      else if(r.job_types.code === 'Privat') byDate[d].privat += price
+      else byDate[d].normal += price
+      const branch = branchMap[r.employees.akt_no]
+      if(branch && byDate[d].branch[branch] !== undefined) byDate[d].branch[branch] += price
+    })
+    const days = Object.keys(byDate).sort()
+    if(days.length){
+      dailyBreakdownHtml = `
+        <div class="card">
+          <label>Tägliche Aufschlüsselung</label>
+          <div class="table-wrap">
+            <table>
+              <thead><tr><th>Datum</th><th>Normal</th><th>MTS</th><th>Privat</th>${BRANCHES.map(b=>`<th>${b}</th>`).join('')}<th>Gesamt</th></tr></thead>
+              <tbody>
+                ${days.map(d=>{
+                  const row = byDate[d]
+                  const total = row.normal + row.mts + row.privat
+                  return `<tr>
+                    <td>${d}</td>
+                    <td>${fmtEur(row.normal)}</td>
+                    <td>${fmtEur(row.mts)}</td>
+                    <td>${fmtEur(row.privat)}</td>
+                    ${BRANCHES.map(b=>`<td>${fmtEur(row.branch[b])}</td>`).join('')}
+                    <td>${fmtEur(total)}</td>
+                  </tr>`
+                }).join('')}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      `
+    }
+  }
+
   main.innerHTML = `
     <button class="refresh" id="refreshBtn">↻ Aktualisieren</button>
+    <button class="refresh" id="pdfBtn">📄 Als PDF speichern</button>
+    ${adminBackdateHtml}
     ${pushCardHtml}
     ${rangeHeaderHtml}
     <div class="card">
@@ -949,6 +1221,7 @@ async function renderBossDashboard(){
       </div>
       ${unassigned > 0 ? `<div class="sub" style="margin-top:10px;text-align:center;">Keine Filiale angegeben: ${fmtEur(unassigned)}</div>` : ''}
     </div>
+    ${dailyBreakdownHtml}
     <div class="card">
       <label>Zusammenfassung pro Mitarbeiter</label>
       ${employeeFilterHtml}
@@ -1005,6 +1278,44 @@ function wireBossControls(){
     bossRange.search = e.target.value
     clearTimeout(searchTimer)
     searchTimer = setTimeout(renderBossDashboard, 400)
+  })
+  document.getElementById('pdfBtn')?.addEventListener('click', ()=>window.print())
+  wireAdminBackdateForm()
+}
+
+// ============ ADMİN — GEÇMİŞE KAYIT EKLEME ============
+// Sadece gizli admin hesabı (is_admin && hidden_from_login) için görünür.
+// Herhangi bir çalışan adına, herhangi bir geçmiş tarihe, o çalışan
+// kendisi girmiş gibi (şifresiz) kayıt ekler.
+
+let backdateSelectedJobType = null
+
+function wireAdminBackdateForm(){
+  const card = document.getElementById('adminBackdateCard')
+  if(!card) return
+  backdateSelectedJobType = null
+  wireJobForm('bk', ()=>backdateSelectedJobType, (jt)=>{ backdateSelectedJobType = jt })
+  document.getElementById('bkAddBtn').addEventListener('click', async ()=>{
+    const empId = document.getElementById('bkEmployeeSelect').value
+    const dateVal = document.getElementById('bkDate').value
+    if(!empId){ showToast('Bitte Mitarbeiter auswählen'); return }
+    if(!dateVal){ showToast('Bitte Datum auswählen'); return }
+    if(dateVal > todayStr()){ showToast('Datum darf nicht in der Zukunft liegen'); return }
+    const jt = backdateSelectedJobType
+    if(!jt){ showToast('Bitte Auftragsart auswählen'); return }
+    const values = readJobFormValues('bk', jt)
+    const createdAtOverride = new Date(dateVal + 'T12:00:00').toISOString()
+    const { error, count } = await insertJobRecord({
+      jobType: jt,
+      employeeId: empId,
+      values,
+      dateStr: dateVal,
+      createdAtOverride
+    })
+    if(error){ showToast('Fehler: ' + error.message); return }
+    showToast('Rückwirkender Eintrag für ' + dateVal + ' gespeichert')
+    backdateSelectedJobType = null
+    renderBossDashboard()
   })
 }
 
