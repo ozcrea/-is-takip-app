@@ -654,6 +654,29 @@ async function renderEmployeeDay(){
   const qtyCounts = {}
   todaysRecords.forEach(r=>{ if(r.job_types.is_quantity) qtyCounts[r.job_type_id] = (qtyCounts[r.job_type_id]||0) + 1 })
 
+  const isHiddenAdmin = !!(currentEmployee?.is_admin && currentEmployee?.hidden_from_login)
+  const adminBackdateHtml = isHiddenAdmin ? `
+    <div class="card" id="adminBackdateCard">
+      <label>⏱ Geçmişe Kayıt Ekle (Admin)</label>
+      ${!currentEmployee.auth_user_id ? `
+        <div class="sub" style="color:var(--red);margin:-4px 0 14px;">
+          ⚠ Bu hesap henüz gerçek Supabase Auth'a bağlı değil (auth_user_id boş).
+          Kayıt eklemeyi denerseniz sunucu güvenlik kuralı (RLS) isteği
+          reddedebilir. Migrate-employees fonksiyonunu bu hesap için de
+          çalıştırmanız gerekebilir.
+        </div>
+      ` : ''}
+      <label style="margin-top:0;">Mitarbeiter</label>
+      <select id="bkEmployeeSelect">
+        <option value="">Auswählen...</option>
+        ${employees.filter(e=>!e.hidden_from_login).map(e => `<option value="${e.id}">${e.name} (${e.akt_no})</option>`).join('')}
+      </select>
+      <label>Datum</label>
+      <input type="date" id="bkDate" max="${localDateStr(new Date())}">
+      ${jobFormHtml('bk', {})}
+    </div>
+  ` : ''
+
   main.innerHTML = `
     <div class="card">
       <label>Angemeldet als</label>
@@ -699,6 +722,8 @@ async function renderEmployeeDay(){
         `).join('')}
       </div>
     </div>
+
+    ${adminBackdateHtml}
   `
 
   let pickedBranch = null
@@ -750,6 +775,7 @@ async function renderEmployeeDay(){
       renderEmployeeDay()
     })
   })
+  wireAdminBackdateForm()
 }
 
 async function saveHours(num, branch){
@@ -962,6 +988,35 @@ function currentRangeDates(){
   return { start: bossRange.start || today, end: bossRange.end || today }
 }
 
+// "Zusammenfassung pro Mitarbeiter" bir çalışan seçiliyken kendi
+// bağımsız Zeitraum'una sahip olabiliyor (Dün/Woche/Monat/Letzter Monat) —
+// üstteki ana Zeitraum'dan tamamen ayrı, kendi state'i (bossRange.employeeReportMode).
+function employeeSummaryRangeDates(mode){
+  const today = todayStr()
+  if(mode === 'yesterday'){
+    const d = new Date(); d.setDate(d.getDate() - 1)
+    const s = d.toISOString().slice(0,10)
+    return { start: s, end: s }
+  }
+  if(mode === 'month'){
+    const d = new Date()
+    const first = new Date(d.getFullYear(), d.getMonth(), 1)
+    return { start: first.toISOString().slice(0,10), end: today }
+  }
+  if(mode === 'lastMonth'){
+    const d = new Date()
+    const lastOfPrevMonth = new Date(d.getFullYear(), d.getMonth(), 0)
+    const firstOfPrevMonth = new Date(lastOfPrevMonth.getFullYear(), lastOfPrevMonth.getMonth(), 1)
+    return { start: firstOfPrevMonth.toISOString().slice(0,10), end: lastOfPrevMonth.toISOString().slice(0,10) }
+  }
+  // 'week' (varsayılan)
+  const d = new Date(); const day = (d.getDay()+6)%7
+  const monday = new Date(d); monday.setDate(d.getDate()-day)
+  return { start: monday.toISOString().slice(0,10), end: today }
+}
+
+const EMPLOYEE_SUMMARY_RANGE_LABELS = { yesterday: 'Gestern', week: 'Diese Woche', month: 'Dieser Monat', lastMonth: 'Letzter Monat' }
+
 async function renderBossDashboard(){
   main.innerHTML = `<div class="empty">Lädt...</div>`
 
@@ -974,29 +1029,6 @@ async function renderBossDashboard(){
 
   const allRecords = recordsRes.data || []
   const hours = hoursRes.data || []
-
-  const isHiddenAdmin = !!(currentEmployee?.is_admin && currentEmployee?.hidden_from_login)
-  const adminBackdateHtml = isHiddenAdmin ? `
-    <div class="card" id="adminBackdateCard">
-      <label>⏱ Geçmişe Kayıt Ekle (Admin)</label>
-      ${!currentEmployee.auth_user_id ? `
-        <div class="sub" style="color:var(--red);margin:-4px 0 14px;">
-          ⚠ Bu hesap henüz gerçek Supabase Auth'a bağlı değil (auth_user_id boş).
-          Kayıt eklemeyi denerseniz sunucu güvenlik kuralı (RLS) isteği
-          reddedebilir. Migrate-employees fonksiyonunu bu hesap için de
-          çalıştırmanız gerekebilir.
-        </div>
-      ` : ''}
-      <label style="margin-top:0;">Mitarbeiter</label>
-      <select id="bkEmployeeSelect">
-        <option value="">Auswählen...</option>
-        ${employees.filter(e=>!e.hidden_from_login).map(e => `<option value="${e.id}">${e.name} (${e.akt_no})</option>`).join('')}
-      </select>
-      <label>Datum</label>
-      <input type="date" id="bkDate" max="${localDateStr(new Date())}">
-      ${jobFormHtml('bk', {})}
-    </div>
-  ` : ''
 
   const pushCardHtml = pushStatus === 'unsupported' ? '' : `
     <div class="card">
@@ -1043,6 +1075,35 @@ async function renderBossDashboard(){
     branchMap[h.employees.akt_no] = h.branch
   })
 
+  // declaredHoursOverride/branchOverride: "Zusammenfassung pro Mitarbeiter"da
+  // bir çalışan seçiliyken kendi bağımsız Zeitraum'undan gelen değerler
+  // kullanılır (hoursMap/branchMap ana Zeitraum'a göre hesaplanmıştır).
+  function summaryRowHtml(s, declaredHoursOverride, branchOverride){
+    const declaredHours = declaredHoursOverride !== undefined ? declaredHoursOverride : hoursMap[s.akt_no]
+    const branch = branchOverride !== undefined ? branchOverride : branchMap[s.akt_no]
+    const declaredMinutes = declaredHours !== undefined ? declaredHours * 60 : null
+    const capPct = declaredMinutes ? Math.round((s.workedMinutes / declaredMinutes) * 100) : null
+    return `
+      <div class="summary-row">
+        <div class="top-row">
+          <div>
+            <div class="name">${s.name}</div>
+            <div class="sub">${s.akt_no} · ${declaredHours !== undefined ? declaredHours + ' Std · ' + (branch || '-') : 'keine Stunden erfasst'}</div>
+          </div>
+          <div class="stat">
+            <span class="n">${fmtEur(s.revenue)}</span>
+            <span class="label">${s.count} Aufträge</span>
+          </div>
+        </div>
+        ${capPct !== null ? `
+          <div class="cap-bar"><div class="cap-fill ${capPct>100?'over':''}" style="width:${Math.min(capPct,100)}%;"></div></div>
+          <div class="sub" style="margin-top:4px;">Kapazität: %${capPct} (${Math.round(s.workedMinutes)} Min. Arbeit / ${declaredMinutes} Min. Anwesenheit)</div>
+        ` : `
+          <div class="sub" style="margin-top:4px;">Arbeitszeit: ${Math.round(s.workedMinutes)} Min. (keine erfasste Anwesenheit, daher keine Kapazität %)</div>
+        `}
+      </div>`
+  }
+
   const search = (bossRange.search || '').trim().toLowerCase()
   const branchFilter = bossRange.branchFilter || ''
   const employeeFilter = bossRange.employeeFilter || ''
@@ -1057,13 +1118,71 @@ async function renderBossDashboard(){
     records = records.filter(r => r.employees.akt_no === employeeFilter)
   }
 
+  const employeeFilterHtml = `
+    <label style="margin-top:0;">Mitarbeiter filtern</label>
+    <select id="employeeFilterSelect">
+      <option value="">Alle Mitarbeiter</option>
+      ${employees.map(e => `<option value="${e.akt_no}" ${employeeFilter===e.akt_no?'selected':''}>${e.name} (${e.akt_no})</option>`).join('')}
+    </select>
+  `
+
+  // "Zusammenfassung pro Mitarbeiter" — bir çalışan seçiliyken ANA
+  // Zeitraum'dan (üstteki) TAMAMEN BAĞIMSIZ kendi zaman aralığını
+  // (Gestern/Woche/Monat/Letzter Monat) kullanır, kendi verisini ayrıca
+  // çeker — böylece örn. "Bugün" seçiliyken bir çalışanın "Geçen Ay"
+  // performansı da görüntülenebilir.
+  let employeeSummaryHtml = ''
+  if(employeeFilter){
+    const empReportMode = bossRange.employeeReportMode || 'week'
+    const { start: eStart, end: eEnd } = employeeSummaryRangeDates(empReportMode)
+    const emp = employees.find(e => e.akt_no === employeeFilter)
+    const [eRecordsRes, eHoursRes] = await Promise.all([
+      supabase.from('records').select('*, employees(name, akt_no), job_types(code, name, duration_minutes, price_eur, is_mts, is_variable_price)').eq('employee_id', emp ? emp.id : '').gte('created_at', startOfDayISO(eStart)).lt('created_at', endOfDayISO(eEnd)),
+      supabase.from('daily_hours').select('*').eq('employee_id', emp ? emp.id : '').gte('work_date', eStart).lte('work_date', eEnd)
+    ])
+    const eRecords = eRecordsRes.data || []
+    const eHoursRows = eHoursRes.data || []
+    let eDeclaredHours = 0
+    let eBranch = null
+    eHoursRows.forEach(h => { eDeclaredHours += Number(h.hours); eBranch = h.branch })
+    const eHasHours = eHoursRows.length > 0
+
+    const s = { name: emp ? emp.name : employeeFilter, akt_no: employeeFilter, count: 0, revenue: 0, workedMinutes: 0 }
+    eRecords.forEach(r=>{
+      s.count += 1
+      s.revenue += recordPrice(r)
+      s.workedMinutes += r.job_types.duration_minutes + (r.regiestunde||0)*60
+    })
+
+    const rangeChipsHtml = `
+      <div class="range-chips" style="margin-top:10px;">
+        ${['yesterday','week','month','lastMonth'].map(m => `<div class="range-chip emp-range-chip ${empReportMode===m?'active':''}" data-emprange="${m}">${EMPLOYEE_SUMMARY_RANGE_LABELS[m]}</div>`).join('')}
+      </div>
+      <div class="sub" style="color:var(--ink-dim);font-size:12px;margin:6px 0 0;">${eStart === eEnd ? eStart : eStart + ' – ' + eEnd}</div>
+    `
+
+    employeeSummaryHtml = rangeChipsHtml + (
+      eRecords.length === 0 ? `
+        <div class="summary-row">
+          <div class="name">${s.name}</div>
+          <div class="sub">${employeeFilter} · ${eHasHours ? eDeclaredHours + ' Std · ' + (eBranch||'-') : 'keine Stunden erfasst'}</div>
+          <div class="empty" style="padding:14px 0;">Keine Aufträge in diesem Zeitraum</div>
+        </div>
+      ` : summaryRowHtml(s, eHasHours ? eDeclaredHours : undefined, eBranch)
+    )
+  }
+
   if(allRecords.length === 0){
     main.innerHTML = `
       <button class="refresh" id="refreshBtn">↻ Aktualisieren</button>
       <button class="refresh" id="pdfBtn">📄 Als PDF speichern</button>
-      ${adminBackdateHtml}
       ${pushCardHtml}
       ${rangeHeaderHtml}
+      <div class="card">
+        <label>Zusammenfassung pro Mitarbeiter</label>
+        ${employeeFilterHtml}
+        ${employeeFilter ? employeeSummaryHtml : '<div class="empty" style="padding:14px 0;">Mitarbeiter auswählen, um dessen Bericht unabhängig vom obigen Zeitraum zu sehen.</div>'}
+      </div>
       <div class="empty"><p class="big">Keine Aufträge in diesem Zeitraum</p></div>`
     wireBossControls()
     return
@@ -1090,67 +1209,24 @@ async function renderBossDashboard(){
     }
   })
 
-  const summary = {}
-  records.forEach(r=>{
-    const key = r.employees.akt_no
-    if(!summary[key]) summary[key] = { name: r.employees.name, akt_no: key, count:0, revenue:0, workedMinutes:0 }
-    summary[key].count += 1
-    summary[key].revenue += recordPrice(r)
-    summary[key].workedMinutes += r.job_types.duration_minutes + (r.regiestunde||0)*60
-  })
-
-  function summaryRowHtml(s){
-    const declaredHours = hoursMap[s.akt_no]
-    const declaredMinutes = declaredHours !== undefined ? declaredHours * 60 : null
-    const capPct = declaredMinutes ? Math.round((s.workedMinutes / declaredMinutes) * 100) : null
-    return `
-      <div class="summary-row">
-        <div class="top-row">
-          <div>
-            <div class="name">${s.name}</div>
-            <div class="sub">${s.akt_no} · ${declaredHours !== undefined ? declaredHours + ' Std · ' + (branchMap[s.akt_no] || '-') : 'keine Stunden erfasst'}</div>
-          </div>
-          <div class="stat">
-            <span class="n">${fmtEur(s.revenue)}</span>
-            <span class="label">${s.count} Aufträge</span>
-          </div>
-        </div>
-        ${capPct !== null ? `
-          <div class="cap-bar"><div class="cap-fill ${capPct>100?'over':''}" style="width:${Math.min(capPct,100)}%;"></div></div>
-          <div class="sub" style="margin-top:4px;">Kapazität: %${capPct} (${Math.round(s.workedMinutes)} Min. Arbeit / ${declaredMinutes} Min. Anwesenheit)</div>
-        ` : `
-          <div class="sub" style="margin-top:4px;">Arbeitszeit: ${Math.round(s.workedMinutes)} Min. (keine erfasste Anwesenheit, daher keine Kapazität %)</div>
-        `}
-      </div>`
-  }
-
-  const summaryEntries = Object.values(summary).sort((a,b)=>b.revenue-a.revenue)
+  // "Zusammenfassung pro Mitarbeiter": çalışan seçilmemişse ana Zeitraum'a
+  // göre TÜM çalışanlar; seçilmişse yukarıda bağımsız Zeitraum ile zaten
+  // hesaplanmış olan employeeSummaryHtml kullanılır.
   let summaryHtml
   if(!employeeFilter){
-    summaryHtml = summaryEntries.map(summaryRowHtml).join('')
+    const summary = {}
+    records.forEach(r=>{
+      const key = r.employees.akt_no
+      if(!summary[key]) summary[key] = { name: r.employees.name, akt_no: key, count:0, revenue:0, workedMinutes:0 }
+      summary[key].count += 1
+      summary[key].revenue += recordPrice(r)
+      summary[key].workedMinutes += r.job_types.duration_minutes + (r.regiestunde||0)*60
+    })
+    const summaryEntries = Object.values(summary).sort((a,b)=>b.revenue-a.revenue)
+    summaryHtml = summaryEntries.map(s => summaryRowHtml(s)).join('')
   } else {
-    const match = summaryEntries.find(s => s.akt_no === employeeFilter)
-    if(match){
-      summaryHtml = summaryRowHtml(match)
-    } else {
-      const emp = employees.find(e => e.akt_no === employeeFilter)
-      const declaredHours = hoursMap[employeeFilter]
-      summaryHtml = emp ? `
-        <div class="summary-row">
-          <div class="name">${emp.name}</div>
-          <div class="sub">${emp.akt_no} · ${declaredHours !== undefined ? declaredHours + ' Std · ' + (branchMap[employeeFilter] || '-') : 'keine Stunden erfasst'}</div>
-          <div class="empty" style="padding:14px 0;">Keine Aufträge in diesem Zeitraum</div>
-        </div>` : ''
-    }
+    summaryHtml = employeeSummaryHtml
   }
-
-  const employeeFilterHtml = `
-    <label style="margin-top:0;">Mitarbeiter filtern</label>
-    <select id="employeeFilterSelect">
-      <option value="">Alle Mitarbeiter</option>
-      ${employees.map(e => `<option value="${e.akt_no}" ${employeeFilter===e.akt_no?'selected':''}>${e.name} (${e.akt_no})</option>`).join('')}
-    </select>
-  `
 
   const rowsHtml = records.map(r => `
     <tr>
@@ -1207,7 +1283,6 @@ async function renderBossDashboard(){
   main.innerHTML = `
     <button class="refresh" id="refreshBtn">↻ Aktualisieren</button>
     <button class="refresh" id="pdfBtn">📄 Als PDF speichern</button>
-    ${adminBackdateHtml}
     ${pushCardHtml}
     ${rangeHeaderHtml}
     <div class="card">
@@ -1292,6 +1367,12 @@ function wireBossControls(){
     bossRange.employeeFilter = e.target.value
     renderBossDashboard()
   })
+  document.querySelectorAll('.emp-range-chip').forEach(chip=>{
+    chip.addEventListener('click', ()=>{
+      bossRange.employeeReportMode = chip.dataset.emprange
+      renderBossDashboard()
+    })
+  })
   let searchTimer = null
   document.getElementById('searchInput')?.addEventListener('input', (e)=>{
     bossRange.search = e.target.value
@@ -1299,7 +1380,6 @@ function wireBossControls(){
     searchTimer = setTimeout(renderBossDashboard, 400)
   })
   document.getElementById('pdfBtn')?.addEventListener('click', ()=>window.print())
-  wireAdminBackdateForm()
 }
 
 // ============ ADMİN — GEÇMİŞE KAYIT EKLEME ============
@@ -1341,7 +1421,7 @@ function wireAdminBackdateForm(){
     if(error){ showToast('Fehler: ' + error.message); console.error('Geçmişe kayıt ekleme hatası:', error); return }
     showToast('Rückwirkender Eintrag für ' + dateVal + ' gespeichert')
     backdateSelectedJobType = null
-    renderBossDashboard()
+    renderEmployeeDay()
   })
 }
 
