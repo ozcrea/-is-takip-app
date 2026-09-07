@@ -285,6 +285,7 @@ function jobFormHtml(prefix, qtyCounts){
   const extraArbeitOptionsHtml = extraArbeitEligibleJobTypes()
     .map(j => `<option value="${j.id}">${j.code} (${fmtEur(j.price_eur||0)})</option>`).join('')
   return `
+    <input type="text" id="${prefix}JobSearch" placeholder="🔍 Hizmet suchen..." style="margin-bottom:10px;">
     <div class="job-list" id="${prefix}JobList">
       ${visibleJobTypes().map(j => `
         <div class="job-btn" data-id="${j.id}">
@@ -435,6 +436,14 @@ function wireJobForm(prefix, getSelected, setSelected, extraValid){
   })
   ;['PerformerSelect','MtsTypeSelect','ShowroomHoursSelect','ExtraArbeit1Select','ExtraArbeit2Select'].forEach(id=>{
     $(id).addEventListener('change', ()=>validateJobForm(prefix, getSelected, extraValid))
+  })
+  $('JobSearch').addEventListener('input', ()=>{
+    const q = $('JobSearch').value.trim().toLowerCase()
+    $('JobList').querySelectorAll('.job-btn[data-id]').forEach(btn=>{
+      const jt = jobTypes.find(j => j.id === btn.dataset.id)
+      const match = !q || (jt && jt.code.toLowerCase().includes(q))
+      btn.style.display = match ? 'flex' : 'none'
+    })
   })
 }
 
@@ -901,6 +910,9 @@ async function addRecord(){
 
 // ============ ÇALIŞAN — AYLIK DETAYLI RAPOR ============
 
+// Sadeleştirilmiş: sadece tarih + çalışılan saat gösterir (iş listesi/ciro
+// YOK — bunlar artık şef panelinde "Zusammenfassung pro Mitarbeiter"
+// bölümünde, çalışan seçilince görünen detaylı günlük kırılıma taşındı).
 async function renderEmployeeMonthlyReport(monthStr){
   main.innerHTML = `<div class="empty">Lädt...</div>`
   monthStr = monthStr || todayStr().slice(0,7)
@@ -909,51 +921,17 @@ async function renderEmployeeMonthlyReport(monthStr){
   const lastDay = new Date(y, m, 0).getDate()
   const endDate = `${monthStr}-${String(lastDay).padStart(2,'0')}`
 
-  const [hoursRes, recordsRes] = await Promise.all([
-    supabase.from('daily_hours').select('*').eq('employee_id', currentEmployee.id).gte('work_date', startDate).lte('work_date', endDate).order('work_date'),
-    supabase.from('records').select('*, job_types(code, name, is_mts, is_variable_price, price_eur)').eq('employee_id', currentEmployee.id).gte('created_at', startOfDayISO(startDate)).lt('created_at', endOfDayISO(endDate)).order('created_at')
-  ])
+  const { data: hoursRows } = await supabase.from('daily_hours').select('*').eq('employee_id', currentEmployee.id).gte('work_date', startDate).lte('work_date', endDate).order('work_date')
+  const rows = hoursRows || []
+  const totalHours = rows.reduce((sum,h)=>sum + Number(h.hours), 0)
 
-  const hoursByDay = {}
-  ;(hoursRes.data||[]).forEach(h=>{ hoursByDay[h.work_date] = Number(h.hours) })
-
-  const records = recordsRes.data || []
-  const recordsByDay = {}
-  records.forEach(r=>{
-    const d = localDateStr(r.created_at)
-    if(!recordsByDay[d]) recordsByDay[d] = []
-    recordsByDay[d].push(r)
-  })
-
-  const allDays = Array.from(new Set([...Object.keys(hoursByDay), ...Object.keys(recordsByDay)])).sort()
-
-  let totalHours = 0, normal = 0, mts = 0, privat = 0
-  Object.values(hoursByDay).forEach(h => totalHours += h)
-  records.forEach(r=>{
-    const price = recordPrice(r)
-    if(r.job_types.is_mts) mts += price
-    else if(r.job_types.code === 'Privat') privat += price
-    else normal += price
-  })
-  const netto = normal * 0.75 + mts + privat
-
-  const dayRowsHtml = allDays.length ? allDays.map(d=>{
-    const recs = recordsByDay[d] || []
-    const jobsLabel = recs.length ? recs.map(r=>r.job_types.code).join(', ') : '—'
-    return `
-      <div class="summary-row">
-        <div class="top-row">
-          <div>
-            <div class="name">${d}</div>
-            <div class="sub">${jobsLabel}</div>
-          </div>
-          <div class="stat">
-            <span class="n">${hoursByDay[d] !== undefined ? hoursByDay[d] + ' Std' : '-'}</span>
-            <span class="label">${recs.length} Aufträge</span>
-          </div>
-        </div>
-      </div>`
-  }).join('') : '<div class="empty">Keine Daten in diesem Monat</div>'
+  const dayRowsHtml = rows.length ? rows.map(h=>`
+    <div class="summary-row">
+      <div class="top-row">
+        <div class="name">${h.work_date}</div>
+        <div class="stat"><span class="n">${h.hours} Std</span></div>
+      </div>
+    </div>`).join('') : '<div class="empty">Keine Daten in diesem Monat</div>'
 
   main.innerHTML = `
     <button class="secondary" id="backToDayBtn" style="margin-bottom:14px;">← Zurück</button>
@@ -962,10 +940,8 @@ async function renderEmployeeMonthlyReport(monthStr){
       <input type="month" id="reportMonthInput" value="${monthStr}" max="${todayStr().slice(0,7)}">
     </div>
     <div class="card">
-      <label>${monthStr} — Zusammenfassung</label>
-      <div class="revenue-total">${fmtEur(netto)}</div>
-      <div class="revenue-total-net" style="margin-bottom:8px;">Netto Umsatz (Normal 25% abgezogen)</div>
-      <div class="sub" style="text-align:center;">${records.length} Aufträge · ${totalHours} Std insgesamt</div>
+      <label>${monthStr} — Gesamtstunden</label>
+      <div class="revenue-total">${totalHours} Std</div>
     </div>
     <div class="card">
       <label>Tag für Tag</label>
@@ -1255,6 +1231,37 @@ async function renderBossDashboard(){
       <div class="sub" style="color:var(--ink-dim);font-size:12px;margin:6px 0 0;">${eStart === eEnd ? eStart : eStart + ' – ' + eEnd}</div>
     `
 
+    // Detaylı günlük kırılım (tarih + saat + iş sayısı + CİRO) — bu artık
+    // çalışanın kendi Monatsbericht'inde değil, sadece burada görünüyor.
+    const eHoursByDay = {}
+    eHoursRows.forEach(h => { eHoursByDay[h.work_date] = Number(h.hours) })
+    const eRecordsByDay = {}
+    eRecords.forEach(r => {
+      const d = localDateStr(r.created_at)
+      if(!eRecordsByDay[d]) eRecordsByDay[d] = []
+      eRecordsByDay[d].push(r)
+    })
+    const eAllDays = Array.from(new Set([...Object.keys(eHoursByDay), ...Object.keys(eRecordsByDay)])).sort()
+    const eDailyBreakdownHtml = eAllDays.length ? `
+      <div class="table-wrap" style="margin-top:14px;">
+        <table>
+          <thead><tr><th>Datum</th><th>Std.</th><th>Aufträge</th><th>Umsatz</th></tr></thead>
+          <tbody>
+            ${eAllDays.map(d=>{
+              const recs = eRecordsByDay[d] || []
+              const dayRevenue = recs.reduce((sum,r)=>sum + recordPrice(r), 0)
+              return `<tr>
+                <td>${d}</td>
+                <td>${eHoursByDay[d] !== undefined ? eHoursByDay[d] : '-'}</td>
+                <td>${recs.length}</td>
+                <td>${fmtEur(dayRevenue)}</td>
+              </tr>`
+            }).join('')}
+          </tbody>
+        </table>
+      </div>
+    ` : ''
+
     employeeSummaryHtml = rangeChipsHtml + (
       eRecords.length === 0 ? `
         <div class="summary-row">
@@ -1263,7 +1270,7 @@ async function renderBossDashboard(){
           <div class="empty" style="padding:14px 0;">Keine Aufträge in diesem Zeitraum</div>
         </div>
       ` : summaryRowHtml(s, eHasHours ? eDeclaredHours : undefined, eBranch)
-    )
+    ) + eDailyBreakdownHtml
   }
 
   if(allRecords.length === 0){
