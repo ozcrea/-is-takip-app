@@ -46,6 +46,9 @@
   }
   .job-btn .code{ font-family:'JetBrains Mono',monospace; font-weight:700; }
   .job-btn .dur{ font-size:11px; color:var(--ink-dim); }
+  .job-btn-info{ display:flex; flex-direction:column; gap:3px; min-width:0; }
+  .job-btn .job-price{ font-family:'JetBrains Mono',monospace; font-size:12px; color:var(--ink-dim); }
+  .job-btn.selected .job-price{ color:var(--amber); opacity:.85; }
   .job-btn.selected{ border-color:var(--amber); background:rgba(245,166,35,0.12); }
   .job-btn.selected .code{ color:var(--amber); }
   .mts-tag{ font-size:9px; background:rgba(91,155,213,0.18); color:var(--blue); padding:2px 6px; border-radius:10px; margin-left:6px; }
@@ -169,6 +172,10 @@ const AUTH_EMAIL_DOMAIN = 'mitarbeiter.autowerk.app'
 // Fotoservice, kaydı giren çalışan kim olursa olsun, o günkü şubeye
 // atanan SABİT kişiye yazılır (bkz. insertJobRecord).
 const BRANCH_FOTOSERVICE_OWNER = { 'Ausschläger Weg': 'A3A', 'Wiesendamm': 'W1S', 'Horn': 'H1A' }
+// Fotoservice fiyatı şubeye göre değişir (Audi vs. VW/Skoda). FOTOSERVICE
+// iş tipi is_variable_price=true olarak işaretli (schema_v15.sql) — bu
+// harita, insertJobRecord()'da owner kaydının custom_price'ını belirler.
+const FOTOSERVICE_BRANCH_PRICE = { 'Ausschläger Weg': 9.88, 'Horn': 12.48, 'Wiesendamm': 12.48 }
 
 // Site geneli erişim şifresi. Bu SADECE tarayıcı tarafında kontrol edilen
 // bir engel — sayfa kaynağını görebilen biri şifreyi görebilir. Gerçek
@@ -232,7 +239,7 @@ function recordPrice(r){
   // kaydına (şubenin sabit sorumlusuna) yazılıyor — bkz. insertJobRecord().
   // 'fotoservice' alanı burada sadece bilgi amaçlı bir etikettir, fiyata eklenmez.
   const base = r.job_types.is_variable_price ? (r.custom_price || 0) : (r.job_types.price_eur || 0)
-  return base + (r.regiestunde||0) * REGIESTUNDE_RATE
+  return base + (r.regiestunde||0) * REGIESTUNDE_RATE + (r.extra_arbeit_price || 0)
 }
 
 function localDateStr(iso){
@@ -242,6 +249,13 @@ function localDateStr(iso){
 
 function visibleJobTypes(){
   return jobTypes.filter(j => !j.is_internal)
+}
+
+// "Extra Arbeit" için seçilebilecek havuz: manuel fiyat girilen (Smart
+// Repair dahil), sayaç bazlı ve iç kullanım hizmetleri hariç tutulur —
+// bunların hepsi sabit tek bir fiyata sahip, ekstra girdi gerektirmez.
+function extraArbeitEligibleJobTypes(){
+  return jobTypes.filter(j => !j.is_variable_price && !j.is_quantity && !j.is_internal)
 }
 
 function updateLogoutBtn(){
@@ -261,13 +275,23 @@ async function loadStaticData(){
 // bölüm ikisi arasında paylaşılan, prefix'lenmiş (id çakışmasını önlemek
 // için) yardımcı fonksiyonları içerir.
 
+function jobPriceLabel(j){
+  if(j.is_variable_price) return 'Preis: manuell'
+  return fmtEur(j.price_eur || 0)
+}
+
 function jobFormHtml(prefix, qtyCounts){
   qtyCounts = qtyCounts || {}
+  const extraArbeitOptionsHtml = extraArbeitEligibleJobTypes()
+    .map(j => `<option value="${j.id}">${j.code} (${fmtEur(j.price_eur||0)})</option>`).join('')
   return `
     <div class="job-list" id="${prefix}JobList">
       ${visibleJobTypes().map(j => `
         <div class="job-btn" data-id="${j.id}">
-          <span class="code">${j.code}${j.is_mts ? '<span class="mts-tag">MTS</span>' : ''}${j.is_quantity ? '<span class="qty-tag">Stück</span>' : ''}</span>
+          <div class="job-btn-info">
+            <span class="code">${j.code}${j.is_mts ? '<span class="mts-tag">MTS</span>' : ''}${j.is_quantity ? '<span class="qty-tag">Stück</span>' : ''}</span>
+            <span class="job-price">${jobPriceLabel(j)}</span>
+          </div>
           ${j.is_quantity ? `<span class="qty-count">${qtyCounts[j.id]||0}× heute</span>` : ''}
         </div>`).join('')}
     </div>
@@ -291,6 +315,13 @@ function jobFormHtml(prefix, qtyCounts){
         <option value="Delle">Delle</option>
       </select>
     </div>
+    <div id="${prefix}ShowroomHoursWrap" style="display:none;">
+      <label>Dauer (Std.)</label>
+      <select id="${prefix}ShowroomHoursSelect">
+        <option value="">Auswählen...</option>
+        ${[1,2,3,4,5].map(n=>`<option value="${n}">${n} Std</option>`).join('')}
+      </select>
+    </div>
     <div id="${prefix}RegiestundeWrap" style="display:none;">
       <label>Regiestunde Aufbereitung (falls zutreffend, Stunden)</label>
       <select id="${prefix}Regiestunde">
@@ -306,10 +337,22 @@ function jobFormHtml(prefix, qtyCounts){
       </select>
     </div>
     <div id="${prefix}FotoserviceWrap" style="display:none;">
-      <label>Fotoservice (+${FOTOSERVICE_PRICE.toFixed(2)} €)</label>
+      <label>Fotoservice</label>
       <select id="${prefix}FotoserviceSelect">
         <option value="nein">Nein</option>
         <option value="ja">Ja</option>
+      </select>
+    </div>
+    <div id="${prefix}ExtraArbeitWrap" style="display:none;">
+      <label>Extra Arbeit 1 (optional)</label>
+      <select id="${prefix}ExtraArbeit1Select">
+        <option value="">Keine</option>
+        ${extraArbeitOptionsHtml}
+      </select>
+      <label>Extra Arbeit 2 (optional)</label>
+      <select id="${prefix}ExtraArbeit2Select">
+        <option value="">Keine</option>
+        ${extraArbeitOptionsHtml}
       </select>
     </div>
     <button class="primary" id="${prefix}AddBtn" disabled>Auftrag hinzufügen</button>
@@ -331,8 +374,12 @@ function validateJobForm(prefix, getSelected, extraValid){
     const qtyVal = $('QtyInput').value
     ok = qtyVal && parseInt(qtyVal) > 0
   } else {
-    const refNo = $('RefNo').value.trim()
-    ok = !!refNo
+    if(jt.requires_ref === false){
+      ok = true
+    } else {
+      const refNo = $('RefNo').value.trim()
+      ok = !!refNo
+    }
     if(jt.is_variable_price){
       const priceVal = $('CustomPrice').value
       ok = ok && priceVal && parseFloat(priceVal) > 0
@@ -342,6 +389,14 @@ function validateJobForm(prefix, getSelected, extraValid){
     }
     if(jt.code === 'MTS-SR'){
       ok = ok && !!$('MtsTypeSelect').value
+    }
+    if(jt.code === 'Showroom Pflege'){
+      ok = ok && !!$('ShowroomHoursSelect').value
+    }
+    if(jt.allows_extra_arbeit){
+      const e1 = $('ExtraArbeit1Select').value
+      const e2 = $('ExtraArbeit2Select').value
+      if(e1 && e2 && e1 === e2) ok = false
     }
   }
   $('AddBtn').disabled = !(ok && extraOk)
@@ -355,17 +410,22 @@ function wireJobForm(prefix, getSelected, setSelected, extraValid){
       btn.classList.add('selected')
       const jt = jobTypes.find(j => j.id === btn.dataset.id)
       setSelected(jt)
-      $('RefNoWrap').style.display = jt.is_quantity ? 'none' : 'block'
+      const showRef = !jt.is_quantity && jt.requires_ref !== false
+      $('RefNoWrap').style.display = showRef ? 'block' : 'none'
       $('QtyWrap').style.display = jt.is_quantity ? 'block' : 'none'
       $('RegiestundeWrap').style.display = jt.is_aufbereitung ? 'block' : 'none'
       $('PriceWrap').style.display = jt.is_variable_price ? 'block' : 'none'
       $('PerformerWrap').style.display = jt.code === 'SR-Delle' ? 'block' : 'none'
       $('MtsTypeWrap').style.display = jt.code === 'MTS-SR' ? 'block' : 'none'
+      $('ShowroomHoursWrap').style.display = jt.code === 'Showroom Pflege' ? 'block' : 'none'
       $('FotoserviceWrap').style.display = FOTOSERVICE_JOB_CODES.includes(jt.code) ? 'block' : 'none'
+      $('ExtraArbeitWrap').style.display = jt.allows_extra_arbeit ? 'block' : 'none'
       if(!jt.is_aufbereitung) $('Regiestunde').value = ''
       if(jt.code !== 'SR-Delle') $('PerformerSelect').value = ''
       if(jt.code !== 'MTS-SR') $('MtsTypeSelect').value = ''
+      if(jt.code !== 'Showroom Pflege') $('ShowroomHoursSelect').value = ''
       if(!FOTOSERVICE_JOB_CODES.includes(jt.code)) $('FotoserviceSelect').value = 'nein'
+      if(!jt.allows_extra_arbeit){ $('ExtraArbeit1Select').value = ''; $('ExtraArbeit2Select').value = '' }
       if(jt.is_quantity) $('QtyInput').value = ''
       validateJobForm(prefix, getSelected, extraValid)
     })
@@ -373,7 +433,7 @@ function wireJobForm(prefix, getSelected, setSelected, extraValid){
   ;['RefNo','QtyInput','CustomPrice'].forEach(id=>{
     $(id).addEventListener('input', ()=>validateJobForm(prefix, getSelected, extraValid))
   })
-  ;['PerformerSelect','MtsTypeSelect'].forEach(id=>{
+  ;['PerformerSelect','MtsTypeSelect','ShowroomHoursSelect','ExtraArbeit1Select','ExtraArbeit2Select'].forEach(id=>{
     $(id).addEventListener('change', ()=>validateJobForm(prefix, getSelected, extraValid))
   })
 }
@@ -384,12 +444,15 @@ function readJobFormValues(prefix, jt){
     return { qty: parseInt($('QtyInput').value) }
   }
   return {
-    refNo: $('RefNo').value.trim(),
+    refNo: jt.requires_ref === false ? null : $('RefNo').value.trim(),
     regiestunde: $('Regiestunde').value ? parseInt($('Regiestunde').value) : null,
     customPrice: $('CustomPrice').value ? parseFloat($('CustomPrice').value) : null,
     performedBy: $('PerformerSelect').value || null,
     mtsSubtype: $('MtsTypeSelect').value || null,
-    fotoservice: $('FotoserviceSelect').value === 'ja'
+    fotoservice: $('FotoserviceSelect').value === 'ja',
+    showroomHours: $('ShowroomHoursSelect').value ? parseInt($('ShowroomHoursSelect').value) : null,
+    extraArbeit1Id: $('ExtraArbeit1Select').value || null,
+    extraArbeit2Id: $('ExtraArbeit2Select').value || null
   }
 }
 
@@ -420,9 +483,10 @@ async function insertJobRecord({ jobType, employeeId, values, dateStr, createdAt
 
   const wantsFotoservice = FOTOSERVICE_JOB_CODES.includes(jobType.code) && values.fotoservice
   let ownerEmployeeId = null
+  let branch = null
 
   if(wantsFotoservice){
-    const branch = await lookupBranchForDate(employeeId, dateStr)
+    branch = await lookupBranchForDate(employeeId, dateStr)
     const ownerAktNo = branch && BRANCH_FOTOSERVICE_OWNER[branch]
     if(!ownerAktNo){
       return { error: { message: 'Für diesen Tag ist keine Filiale hinterlegt — Fotoservice kann nicht zugeordnet werden.' } }
@@ -444,7 +508,30 @@ async function insertJobRecord({ jobType, employeeId, values, dateStr, createdAt
   if(jobType.is_variable_price) payload.custom_price = values.customPrice
   if(jobType.code === 'SR-Delle') payload.performed_by = values.performedBy
   if(jobType.code === 'MTS-SR') payload.mts_subtype = values.mtsSubtype
+  if(jobType.code === 'Showroom Pflege') payload.custom_duration_minutes = values.showroomHours * 60
   if(FOTOSERVICE_JOB_CODES.includes(jobType.code)) payload.fotoservice = values.fotoservice
+
+  // Extra Arbeit: seçilen 1-2 ek hizmetin fiyatı/süresi Regiestunde gibi
+  // ana kayda toplanıyor, ayrı bir kayıt oluşturulmuyor.
+  if(jobType.allows_extra_arbeit){
+    const extraIds = [values.extraArbeit1Id, values.extraArbeit2Id].filter(Boolean)
+    if(extraIds.length){
+      let extraPrice = 0, extraMinutes = 0
+      const extraCodes = []
+      extraIds.forEach(id=>{
+        const ej = jobTypes.find(j => j.id === id)
+        if(ej){
+          extraPrice += ej.price_eur || 0
+          extraMinutes += ej.duration_minutes || 0
+          extraCodes.push(ej.code)
+        }
+      })
+      payload.extra_arbeit_price = extraPrice
+      payload.extra_arbeit_minutes = extraMinutes
+      payload.extra_arbeit_1_code = extraCodes[0] || null
+      payload.extra_arbeit_2_code = extraCodes[1] || null
+    }
+  }
 
   const rowsToInsert = [payload]
 
@@ -453,6 +540,9 @@ async function insertJobRecord({ jobType, employeeId, values, dateStr, createdAt
     if(!fotoJobType){
       return { error: { message: 'FOTOSERVICE Auftragsart fehlt in der Datenbank (siehe schema_v14.sql).' } }
     }
+    // Fotoservice fiyatı şubeye göre değişir (bkz. FOTOSERVICE_BRANCH_PRICE) —
+    // FOTOSERVICE artık is_variable_price=true, bu yüzden custom_price
+    // burada açıkça belirtiliyor.
     rowsToInsert.push({
       employee_id: ownerEmployeeId,
       job_type_id: fotoJobType.id,
@@ -461,6 +551,7 @@ async function insertJobRecord({ jobType, employeeId, values, dateStr, createdAt
       fotoservice: false, // NOT NULL kolon — bulk insert'te satırlar farklı
                           // key setine sahipse eksik alan DEFAULT yerine
                           // açıkça null gönderilir, bu yüzden burada bilerek belirtiliyor.
+      custom_price: FOTOSERVICE_BRANCH_PRICE[branch] ?? FOTOSERVICE_PRICE,
       ...createdAtField
     })
   }
@@ -715,7 +806,10 @@ async function renderEmployeeDay(){
             <div><span class="code">${r.job_types.code}</span><span class="ref">${r.ref_no || ''}${r.performed_by ? ' · ' + r.performed_by : ''}${r.mts_subtype ? ' · ' + r.mts_subtype : ''}</span></div>
             <div class="right">
               ${r.regiestunde ? `<span class="extra">+${r.regiestunde} Std</span>` : ''}
+              ${r.custom_duration_minutes ? `<span class="extra">${Math.round(r.custom_duration_minutes/60)} Std</span>` : ''}
               ${r.fotoservice ? `<span class="extra">Fotoservice</span>` : ''}
+              ${r.extra_arbeit_1_code ? `<span class="extra">+${r.extra_arbeit_1_code}</span>` : ''}
+              ${r.extra_arbeit_2_code ? `<span class="extra">+${r.extra_arbeit_2_code}</span>` : ''}
               <button class="del-btn" data-del="${r.id}" title="Löschen">×</button>
             </div>
           </div>
@@ -1151,7 +1245,7 @@ async function renderBossDashboard(){
     eRecords.forEach(r=>{
       s.count += 1
       s.revenue += recordPrice(r)
-      s.workedMinutes += r.job_types.duration_minutes + (r.regiestunde||0)*60
+      s.workedMinutes += r.job_types.duration_minutes + (r.regiestunde||0)*60 + (r.custom_duration_minutes||0) + (r.extra_arbeit_minutes||0)
     })
 
     const rangeChipsHtml = `
@@ -1220,7 +1314,7 @@ async function renderBossDashboard(){
       if(!summary[key]) summary[key] = { name: r.employees.name, akt_no: key, count:0, revenue:0, workedMinutes:0 }
       summary[key].count += 1
       summary[key].revenue += recordPrice(r)
-      summary[key].workedMinutes += r.job_types.duration_minutes + (r.regiestunde||0)*60
+      summary[key].workedMinutes += r.job_types.duration_minutes + (r.regiestunde||0)*60 + (r.custom_duration_minutes||0) + (r.extra_arbeit_minutes||0)
     })
     const summaryEntries = Object.values(summary).sort((a,b)=>b.revenue-a.revenue)
     summaryHtml = summaryEntries.map(s => summaryRowHtml(s)).join('')
@@ -1231,7 +1325,7 @@ async function renderBossDashboard(){
   const rowsHtml = records.map(r => `
     <tr>
       <td>${r.employees.name}</td>
-      <td>${r.job_types.code}${r.job_types.is_mts ? ' (MTS)' : ''}${r.mts_subtype ? ' · ' + r.mts_subtype : ''}${r.performed_by ? ' · ' + r.performed_by : ''}${r.fotoservice ? ' · Foto' : ''}</td>
+      <td>${r.job_types.code}${r.job_types.is_mts ? ' (MTS)' : ''}${r.mts_subtype ? ' · ' + r.mts_subtype : ''}${r.performed_by ? ' · ' + r.performed_by : ''}${r.fotoservice ? ' · Foto' : ''}${r.custom_duration_minutes ? ' · ' + Math.round(r.custom_duration_minutes/60) + ' Std' : ''}${r.extra_arbeit_1_code ? ' · +' + r.extra_arbeit_1_code : ''}${r.extra_arbeit_2_code ? ' · +' + r.extra_arbeit_2_code : ''}</td>
       <td>${r.ref_no || '-'}</td>
       <td>${fmtEur(recordPrice(r))}</td>
     </tr>`).join('')
