@@ -805,6 +805,7 @@ async function renderEmployeeDay(){
 
     <div class="card">
       <label>Neuen Auftrag hinzufügen</label>
+      ${!savedBranch ? `<div class="sub" style="color:var(--red);margin:-4px 0 14px;">⚠ Bitte zuerst oben deine Filiale für heute speichern.</div>` : ''}
       ${jobFormHtml('emp', qtyCounts)}
     </div>
 
@@ -867,7 +868,7 @@ async function renderEmployeeDay(){
   }
 
   selectedJobType = null
-  wireJobForm('emp', ()=>selectedJobType, (jt)=>{ selectedJobType = jt })
+  wireJobForm('emp', ()=>selectedJobType, (jt)=>{ selectedJobType = jt }, ()=>!!savedBranch)
   document.getElementById('empAddBtn').addEventListener('click', addRecord)
   document.getElementById('monthlyReportBtn').addEventListener('click', ()=>renderEmployeeMonthlyReport())
   document.querySelectorAll('[data-del]').forEach(btn=>{
