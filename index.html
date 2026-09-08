@@ -29,6 +29,7 @@
   .app{ max-width:520px; margin:0 auto; min-height:100vh; display:flex; flex-direction:column; }
   header{ padding:calc(20px + env(safe-area-inset-top)) 20px 14px; border-bottom:1px solid var(--line); display:flex; justify-content:space-between; align-items:flex-start; }
   header .eyebrow{ font-family:'JetBrains Mono',monospace; font-size:11px; letter-spacing:.12em; text-transform:uppercase; color:var(--amber); margin:0 0 4px; }
+  header .eyebrow .cross{ color:#7C8B9C; }
   h1{ font-family:'Barlow Condensed',sans-serif; font-weight:700; font-size:28px; margin:0; line-height:1; }
   .logout-btn{ background:none; border:1px solid var(--line); color:var(--ink-dim); font-size:11px; padding:6px 10px; border-radius:6px; cursor:pointer; white-space:nowrap; margin-top:4px; }
   nav{ display:flex; border-bottom:1px solid var(--line); }
@@ -140,7 +141,7 @@
 <div class="app">
   <header id="appHeader">
     <div>
-      <p class="eyebrow">Werkstatt Auftragserfassung</p>
+      <p class="eyebrow">autowerk.app <span class="cross">×</span> 2A1Z Product</p>
       <h1 id="headerTitle">Mitarbeiter</h1>
     </div>
     <button class="logout-btn" id="logoutBtn" style="display:none;">Abmelden</button>
