@@ -255,8 +255,29 @@ function visibleJobTypes(){
 // "Extra Arbeit" için seçilebilecek havuz: manuel fiyat girilen (Smart
 // Repair dahil), sayaç bazlı ve iç kullanım hizmetleri hariç tutulur —
 // bunların hepsi sabit tek bir fiyata sahip, ekstra girdi gerektirmez.
-function extraArbeitEligibleJobTypes(){
-  return jobTypes.filter(j => !j.is_variable_price && !j.is_quantity && !j.is_internal)
+// İSTİSNA: FOTOSERVICE (is_variable_price=true olsa da) her zaman havuzda —
+// tek fark, ana işin kendi Fotoservice "Ja/Nein" sorusu varsa (GW-A/B/FR,
+// VFW-W1/W2) çift sayımı önlemek için Extra Arbeit'te tekrar gösterilmez.
+function extraArbeitEligibleJobTypes(mainJobType){
+  return jobTypes.filter(j => {
+    if(j.is_quantity || j.is_internal) return false
+    if(mainJobType && j.id === mainJobType.id) return false
+    if(j.code === 'FOTOSERVICE'){
+      if(mainJobType && FOTOSERVICE_JOB_CODES.includes(mainJobType.code)) return false
+      return true
+    }
+    return !j.is_variable_price
+  })
+}
+
+function jobExtraArbeitLabel(j){
+  if(j.code === 'FOTOSERVICE') return `${j.code} (Preis: je Filiale)`
+  return `${j.code} (${fmtEur(j.price_eur||0)})`
+}
+
+function extraArbeitOptionsHtml(mainJobType){
+  return extraArbeitEligibleJobTypes(mainJobType)
+    .map(j => `<option value="${j.id}">${jobExtraArbeitLabel(j)}</option>`).join('')
 }
 
 function updateLogoutBtn(){
@@ -277,14 +298,13 @@ async function loadStaticData(){
 // için) yardımcı fonksiyonları içerir.
 
 function jobPriceLabel(j){
+  if(j.code === 'FOTOSERVICE') return 'Preis: je Filiale'
   if(j.is_variable_price) return 'Preis: manuell'
   return fmtEur(j.price_eur || 0)
 }
 
 function jobFormHtml(prefix, qtyCounts){
   qtyCounts = qtyCounts || {}
-  const extraArbeitOptionsHtml = extraArbeitEligibleJobTypes()
-    .map(j => `<option value="${j.id}">${j.code} (${fmtEur(j.price_eur||0)})</option>`).join('')
   return `
     <input type="text" id="${prefix}JobSearch" placeholder="🔍 Hizmet suchen..." style="margin-bottom:10px;">
     <div class="job-list" id="${prefix}JobList">
@@ -349,12 +369,10 @@ function jobFormHtml(prefix, qtyCounts){
       <label>Extra Arbeit 1 (optional)</label>
       <select id="${prefix}ExtraArbeit1Select">
         <option value="">Keine</option>
-        ${extraArbeitOptionsHtml}
       </select>
       <label>Extra Arbeit 2 (optional)</label>
       <select id="${prefix}ExtraArbeit2Select">
         <option value="">Keine</option>
-        ${extraArbeitOptionsHtml}
       </select>
     </div>
     <button class="primary" id="${prefix}AddBtn" disabled>Auftrag hinzufügen</button>
@@ -382,7 +400,7 @@ function validateJobForm(prefix, getSelected, extraValid){
       const refNo = $('RefNo').value.trim()
       ok = !!refNo
     }
-    if(jt.is_variable_price){
+    if(jt.is_variable_price && jt.code !== 'FOTOSERVICE'){
       const priceVal = $('CustomPrice').value
       ok = ok && priceVal && parseFloat(priceVal) > 0
     }
@@ -416,12 +434,17 @@ function wireJobForm(prefix, getSelected, setSelected, extraValid){
       $('RefNoWrap').style.display = showRef ? 'block' : 'none'
       $('QtyWrap').style.display = jt.is_quantity ? 'block' : 'none'
       $('RegiestundeWrap').style.display = jt.is_aufbereitung ? 'block' : 'none'
-      $('PriceWrap').style.display = jt.is_variable_price ? 'block' : 'none'
+      $('PriceWrap').style.display = (jt.is_variable_price && jt.code !== 'FOTOSERVICE') ? 'block' : 'none'
       $('PerformerWrap').style.display = jt.code === 'SR-Delle' ? 'block' : 'none'
       $('MtsTypeWrap').style.display = jt.code === 'MTS-SR' ? 'block' : 'none'
       $('ShowroomHoursWrap').style.display = jt.code === 'Showroom Pflege' ? 'block' : 'none'
       $('FotoserviceWrap').style.display = FOTOSERVICE_JOB_CODES.includes(jt.code) ? 'block' : 'none'
       $('ExtraArbeitWrap').style.display = jt.allows_extra_arbeit ? 'block' : 'none'
+      if(jt.allows_extra_arbeit){
+        const optsHtml = '<option value="">Keine</option>' + extraArbeitOptionsHtml(jt)
+        $('ExtraArbeit1Select').innerHTML = optsHtml
+        $('ExtraArbeit2Select').innerHTML = optsHtml
+      }
       if(!jt.is_aufbereitung) $('Regiestunde').value = ''
       if(jt.code !== 'SR-Delle') $('PerformerSelect').value = ''
       if(jt.code !== 'MTS-SR') $('MtsTypeSelect').value = ''
@@ -491,7 +514,39 @@ async function insertJobRecord({ jobType, employeeId, values, dateStr, createdAt
     return { error, count: values.qty }
   }
 
-  const wantsFotoservice = FOTOSERVICE_JOB_CODES.includes(jobType.code) && values.fotoservice
+  // Standalone FOTOSERVICE seçimi: genel listeden doğrudan seçildiğinde
+  // girenin adına HİÇBİR kayıt oluşturulmaz — tek kayıt doğrudan o günkü
+  // şubenin sabit sorumlusuna (BRANCH_FOTOSERVICE_OWNER) yazılır.
+  if(jobType.code === 'FOTOSERVICE'){
+    const branch = await lookupBranchForDate(employeeId, dateStr)
+    const ownerAktNo = branch && BRANCH_FOTOSERVICE_OWNER[branch]
+    if(!ownerAktNo){
+      return { error: { message: 'Für diesen Tag ist keine Filiale hinterlegt — Fotoservice kann nicht zugeordnet werden.' } }
+    }
+    const owner = employees.find(e => e.akt_no === ownerAktNo)
+    if(!owner){
+      return { error: { message: `Fotoservice-Empfänger (${ownerAktNo}) wurde nicht gefunden.` } }
+    }
+    const { error } = await supabase.from('records').insert([{
+      employee_id: owner.id,
+      job_type_id: jobType.id,
+      ref_no: values.refNo,
+      regiestunde: null,
+      fotoservice: false,
+      custom_price: FOTOSERVICE_BRANCH_PRICE[branch] ?? FOTOSERVICE_PRICE,
+      ...createdAtField
+    }])
+    return { error, count: 1 }
+  }
+
+  // Fotoservice, Extra Arbeit seçeneklerinden biri olarak da seçilmiş
+  // olabilir (bkz. extraArbeitEligibleJobTypes) — bu durumda da giren
+  // çalışana değil, şube sorumlusuna ayrı bir kayıt olarak yazılır, ana
+  // kaydın extra_arbeit toplamına DAHİL EDİLMEZ (aşağıda nonFotoExtraIds).
+  const extraArbeitFotoserviceId = jobType.allows_extra_arbeit &&
+    [values.extraArbeit1Id, values.extraArbeit2Id].find(id => id && jobTypes.find(j => j.id === id)?.code === 'FOTOSERVICE')
+
+  const wantsFotoservice = (FOTOSERVICE_JOB_CODES.includes(jobType.code) && values.fotoservice) || !!extraArbeitFotoserviceId
   let ownerEmployeeId = null
   let branch = null
 
@@ -519,16 +574,27 @@ async function insertJobRecord({ jobType, employeeId, values, dateStr, createdAt
   if(jobType.code === 'SR-Delle') payload.performed_by = values.performedBy
   if(jobType.code === 'MTS-SR') payload.mts_subtype = values.mtsSubtype
   if(jobType.code === 'Showroom Pflege') payload.custom_duration_minutes = values.showroomHours * 60
-  if(FOTOSERVICE_JOB_CODES.includes(jobType.code)) payload.fotoservice = values.fotoservice
+  if(FOTOSERVICE_JOB_CODES.includes(jobType.code)){
+    payload.fotoservice = values.fotoservice
+  } else if(wantsFotoservice){
+    // Ana iş FOTOSERVICE_JOB_CODES'ta değil (Extra Arbeit üzerinden Fotoservice
+    // seçildi) ama owner kaydıyla birlikte tek bir batch insert'te gidecek —
+    // satırlar farklı key setine sahipse PostgREST eksik alana DEFAULT yerine
+    // açıkça null gönderir, NOT NULL ihlaline yol açar. Bu yüzden burada da
+    // bilerek false set ediliyor (bkz. aşağıdaki owner satırındaki aynı not).
+    payload.fotoservice = false
+  }
 
   // Extra Arbeit: seçilen 1-2 ek hizmetin fiyatı/süresi Regiestunde gibi
-  // ana kayda toplanıyor, ayrı bir kayıt oluşturulmuyor.
+  // ana kayda toplanıyor, ayrı bir kayıt oluşturulmuyor. FOTOSERVICE
+  // seçilmişse ayrı ele alınıyor (yukarıda), bu yüzden buradan hariç tutulur.
   if(jobType.allows_extra_arbeit){
     const extraIds = [values.extraArbeit1Id, values.extraArbeit2Id].filter(Boolean)
-    if(extraIds.length){
+    const nonFotoExtraIds = extraIds.filter(id => jobTypes.find(j => j.id === id)?.code !== 'FOTOSERVICE')
+    if(nonFotoExtraIds.length){
       let extraPrice = 0, extraMinutes = 0
       const extraCodes = []
-      extraIds.forEach(id=>{
+      nonFotoExtraIds.forEach(id=>{
         const ej = jobTypes.find(j => j.id === id)
         if(ej){
           extraPrice += ej.price_eur || 0
@@ -1047,6 +1113,11 @@ async function enablePushNotifications(){
 function currentRangeDates(){
   const today = todayStr()
   if(bossRange.mode === 'today') return { start: today, end: today }
+  if(bossRange.mode === 'yesterday'){
+    const d = new Date(); d.setDate(d.getDate() - 1)
+    const s = d.toISOString().slice(0,10)
+    return { start: s, end: s }
+  }
   if(bossRange.mode === 'week'){
     const d = new Date(); const day = (d.getDay()+6)%7 // Montag=0
     const monday = new Date(d); monday.setDate(d.getDate()-day)
@@ -1115,6 +1186,7 @@ async function renderBossDashboard(){
       <label>Zeitraum</label>
       <div class="range-chips">
         <div class="range-chip ${bossRange.mode==='today'?'active':''}" data-mode="today">Heute</div>
+        <div class="range-chip ${bossRange.mode==='yesterday'?'active':''}" data-mode="yesterday">Gestern</div>
         <div class="range-chip ${bossRange.mode==='week'?'active':''}" data-mode="week">Diese Woche</div>
         <div class="range-chip ${bossRange.mode==='month'?'active':''}" data-mode="month">Dieser Monat</div>
         <div class="range-chip ${bossRange.mode==='custom'?'active':''}" data-mode="custom">Zeitraum wählen</div>
