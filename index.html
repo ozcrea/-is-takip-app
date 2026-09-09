@@ -177,6 +177,19 @@ const BRANCH_FOTOSERVICE_OWNER = { 'Ausschläger Weg': 'A3A', 'Wiesendamm': 'W1S
 // iş tipi is_variable_price=true olarak işaretli (schema_v15.sql) — bu
 // harita, insertJobRecord()'da owner kaydının custom_price'ını belirler.
 const FOTOSERVICE_BRANCH_PRICE = { 'Ausschläger Weg': 9.88, 'Horn': 12.48, 'Wiesendamm': 12.48 }
+// BRANCH_FOTOSERVICE_OWNER'ın tersi — bir FOTOSERVICE kaydının akt_no'sundan
+// (A3A/W1S/H1A) doğrudan şubesini bulmak için (bkz. şef panelindeki Şube
+// Kategori Raporu). Bu, o günün daily_hours kaydına bağımlı olmadığı için
+// (owner o gün saatini girmemiş olsa bile) daha güvenilir.
+const OWNER_AKT_TO_BRANCH = Object.fromEntries(Object.entries(BRANCH_FOTOSERVICE_OWNER).map(([branch, akt]) => [akt, branch]))
+
+// job_types.category (schema_v24.sql) için görüntüleme sırası — listede
+// olmayan bir kategori en sona eklenir.
+const CATEGORY_DISPLAY_ORDER = ['GW', 'NW', 'SW', 'Foto', 'MTS', 'SR', 'Privat', 'Sonstiges']
+function categorySortIndex(cat){
+  const idx = CATEGORY_DISPLAY_ORDER.indexOf(cat)
+  return idx === -1 ? CATEGORY_DISPLAY_ORDER.length : idx
+}
 
 // Site geneli erişim şifresi. Bu SADECE tarayıcı tarafında kontrol edilen
 // bir engel — sayfa kaynağını görebilen biri şifreyi görebilir. Gerçek
@@ -1352,6 +1365,8 @@ async function renderBossDashboard(){
     main.innerHTML = `
       <button class="refresh" id="refreshBtn">↻ Aktualisieren</button>
       <button class="refresh" id="pdfBtn">📄 Als PDF speichern</button>
+      <button class="refresh" id="empCatReportBtn">👤 Mitarbeiter Raporu</button>
+      <button class="refresh" id="branchCatReportBtn">🏬 Şube Kategori Raporu</button>
       ${pushCardHtml}
       ${rangeHeaderHtml}
       <div class="card">
@@ -1459,6 +1474,8 @@ async function renderBossDashboard(){
   main.innerHTML = `
     <button class="refresh" id="refreshBtn">↻ Aktualisieren</button>
     <button class="refresh" id="pdfBtn">📄 Als PDF speichern</button>
+    <button class="refresh" id="empCatReportBtn">👤 Mitarbeiter Raporu</button>
+    <button class="refresh" id="branchCatReportBtn">🏬 Şube Kategori Raporu</button>
     ${pushCardHtml}
     ${rangeHeaderHtml}
     <div class="card">
@@ -1506,6 +1523,145 @@ async function renderBossDashboard(){
     </div>
   `
   wireBossControls()
+}
+
+// ============ ŞEF PANELİ — MİTARBEİTER RAPORU (kategori bazlı) ============
+// Aylık, çalışan başına: toplam saat + kategori bazlı iş sayısı (GW/NW/
+// SW/Foto/MTS/SR/Privat/Sonstiges — bkz. job_types.category, schema_v24.sql).
+// AKT/şasi numarası GÖSTERİLMEZ, sadece sayım.
+async function renderEmployeeCategoryReport(monthStr){
+  main.innerHTML = `<div class="empty">Lädt...</div>`
+  monthStr = monthStr || todayStr().slice(0,7)
+  const [y, m] = monthStr.split('-').map(Number)
+  const startDate = `${monthStr}-01`
+  const endDate = new Date(y, m, 0).toISOString().slice(0,10)
+
+  const [recordsRes, hoursRes] = await Promise.all([
+    supabase.from('records').select('*, employees(name, akt_no), job_types(category)').gte('created_at', startOfDayISO(startDate)).lt('created_at', endOfDayISO(endDate)),
+    supabase.from('daily_hours').select('*, employees(name, akt_no)').gte('work_date', startDate).lte('work_date', endDate)
+  ])
+  const records = recordsRes.data || []
+  const hoursRows = hoursRes.data || []
+
+  const byEmp = {}
+  function ensure(akt, name){
+    if(!byEmp[akt]) byEmp[akt] = { name, hours: 0, categories: {} }
+    return byEmp[akt]
+  }
+  hoursRows.forEach(h=>{
+    const e = ensure(h.employees.akt_no, h.employees.name)
+    e.hours += Number(h.hours)
+  })
+  records.forEach(r=>{
+    const e = ensure(r.employees.akt_no, r.employees.name)
+    const cat = r.job_types.category || 'Sonstiges'
+    e.categories[cat] = (e.categories[cat] || 0) + 1
+  })
+
+  const aktNos = Object.keys(byEmp).sort((a,b)=> byEmp[b].hours - byEmp[a].hours)
+
+  main.innerHTML = `
+    <button class="secondary" id="backToBossBtn" style="margin-bottom:14px;">← Zurück</button>
+    <div class="card">
+      <label style="margin-top:0;">Monat wählen</label>
+      <input type="month" id="empCatMonthInput" value="${monthStr}">
+    </div>
+    <div class="card">
+      <label>Mitarbeiter Raporu — ${monthStr}</label>
+      ${aktNos.length === 0 ? '<div class="empty">Keine Daten in diesem Monat</div>' : aktNos.map(akt=>{
+        const e = byEmp[akt]
+        const catKeys = Object.keys(e.categories).sort((a,b)=> categorySortIndex(a) - categorySortIndex(b))
+        return `
+          <div class="summary-row">
+            <div class="top-row">
+              <div>
+                <div class="name">${e.name}</div>
+                <div class="sub">${akt} · ${e.hours} Std</div>
+              </div>
+            </div>
+            <div class="sub" style="margin-top:6px;">${catKeys.length ? catKeys.map(c=>`${c}: ${e.categories[c]}`).join(' · ') : 'Keine Aufträge'}</div>
+          </div>
+        `
+      }).join('')}
+    </div>
+  `
+  document.getElementById('backToBossBtn').addEventListener('click', renderBossDashboard)
+  document.getElementById('empCatMonthInput').addEventListener('change', (e)=>renderEmployeeCategoryReport(e.target.value))
+}
+
+// ============ ŞEF PANELİ — ŞUBE BAŞINA KATEGORİ RAPORU ============
+// Aylık, şube başına: SADECE Normal (%25 komisyon) işler — MTS ve
+// Privatkunden HARİÇ. Her şube için toplam ciro + kategori bazlı iş
+// sayısı. AKT/şasi numarası GÖSTERİLMEZ. Fotoservice kayıtları, o günün
+// daily_hours'una bakılmaksızın doğrudan sahibinin (A3A/W1S/H1A) sabit
+// şubesine yazılır (bkz. OWNER_AKT_TO_BRANCH) — böylece owner o gün
+// saatini girmemiş olsa bile Foto sayımı kaybolmaz.
+async function renderBranchCategoryReport(monthStr){
+  main.innerHTML = `<div class="empty">Lädt...</div>`
+  monthStr = monthStr || todayStr().slice(0,7)
+  const [y, m] = monthStr.split('-').map(Number)
+  const startDate = `${monthStr}-01`
+  const endDate = new Date(y, m, 0).toISOString().slice(0,10)
+
+  const [recordsRes, hoursRes] = await Promise.all([
+    supabase.from('records').select('*, employees(name, akt_no), job_types(category, is_mts, code)').gte('created_at', startOfDayISO(startDate)).lt('created_at', endOfDayISO(endDate)),
+    supabase.from('daily_hours').select('*, employees(name, akt_no)').gte('work_date', startDate).lte('work_date', endDate)
+  ])
+  const records = recordsRes.data || []
+  const hoursRows = hoursRes.data || []
+
+  const dayBranchMap = {}
+  hoursRows.forEach(h=>{
+    const akt = h.employees.akt_no
+    if(!dayBranchMap[akt]) dayBranchMap[akt] = {}
+    dayBranchMap[akt][h.work_date] = h.branch
+  })
+
+  const branchData = {}
+  BRANCHES.forEach(b => branchData[b] = { revenue: 0, categories: {} })
+  let unassignedCount = 0
+
+  records.forEach(r=>{
+    if(r.job_types.is_mts || r.job_types.code === 'Privat') return
+    const cat = r.job_types.category || 'Sonstiges'
+    let branch
+    if(cat === 'Foto' && OWNER_AKT_TO_BRANCH[r.employees.akt_no]){
+      branch = OWNER_AKT_TO_BRANCH[r.employees.akt_no]
+    } else {
+      const d = localDateStr(r.created_at)
+      branch = dayBranchMap[r.employees.akt_no]?.[d]
+    }
+    if(!branch || !branchData[branch]){ unassignedCount += 1; return }
+    branchData[branch].revenue += recordPrice(r)
+    branchData[branch].categories[cat] = (branchData[branch].categories[cat] || 0) + 1
+  })
+
+  main.innerHTML = `
+    <button class="secondary" id="backToBossBtn" style="margin-bottom:14px;">← Zurück</button>
+    <div class="card">
+      <label style="margin-top:0;">Monat wählen</label>
+      <input type="month" id="branchCatMonthInput" value="${monthStr}">
+    </div>
+    <div class="card">
+      <label>Şube başına Kategori Raporu — ${monthStr}</label>
+      ${BRANCHES.map(b=>{
+        const data = branchData[b]
+        const catKeys = Object.keys(data.categories).sort((a,c)=> categorySortIndex(a) - categorySortIndex(c))
+        return `
+          <div class="summary-row">
+            <div class="top-row">
+              <div class="name">${b}</div>
+              <div class="stat"><span class="n">${fmtEur(data.revenue)}</span></div>
+            </div>
+            <div class="sub" style="margin-top:6px;">${catKeys.length ? catKeys.map(c=>`${c}: ${data.categories[c]} adet`).join(' · ') : 'Keine Aufträge'}</div>
+          </div>
+        `
+      }).join('')}
+      ${unassignedCount > 0 ? `<div class="sub" style="margin-top:10px;">Keine Filiale zugeordnet: ${unassignedCount} Auftrag/Aufträge</div>` : ''}
+    </div>
+  `
+  document.getElementById('backToBossBtn').addEventListener('click', renderBossDashboard)
+  document.getElementById('branchCatMonthInput').addEventListener('change', (e)=>renderBranchCategoryReport(e.target.value))
 }
 
 function wireBossControls(){
@@ -1556,6 +1712,8 @@ function wireBossControls(){
     searchTimer = setTimeout(renderBossDashboard, 400)
   })
   document.getElementById('pdfBtn')?.addEventListener('click', ()=>window.print())
+  document.getElementById('empCatReportBtn')?.addEventListener('click', ()=>renderEmployeeCategoryReport())
+  document.getElementById('branchCatReportBtn')?.addEventListener('click', ()=>renderBranchCategoryReport())
 }
 
 // ============ ADMİN — GEÇMİŞE KAYIT EKLEME ============
