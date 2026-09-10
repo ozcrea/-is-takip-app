@@ -256,6 +256,20 @@ function recordPrice(r){
   return base + (r.regiestunde||0) * REGIESTUNDE_RATE + (r.extra_arbeit_price || 0)
 }
 
+// SADECE şef panelinde (Alle Einträge tablosu + PDF çıktısı) kullanılır —
+// MTS işlerinin ham kodu yerine okunabilir bir isim gösterir. Çalışanın
+// kendi günlük listesi (Mitarbeiter sekmesi) hâlâ ham kodu gösterir.
+function jobDisplayLabel(r){
+  const code = r.job_types.code
+  if(code === 'MTS-NW') return 'Neuwagen Aufbereitung'
+  if(code === 'MTS-GW') return 'Gebrauchtwagen Aufbereitung'
+  if(code === 'MTS-SR'){
+    if(r.mts_subtype === 'Lack') return 'Lack Smart Repair'
+    if(r.mts_subtype === 'Delle') return 'Delle Smart Repair'
+  }
+  return `${code}${r.job_types.is_mts ? ' (MTS)' : ''}${r.mts_subtype ? ' · ' + r.mts_subtype : ''}`
+}
+
 function localDateStr(iso){
   const d = new Date(iso)
   return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`
@@ -880,6 +894,7 @@ async function renderEmployeeDay(){
       <label>Datum</label>
       <input type="date" id="bkDate" max="${localDateStr(new Date())}">
       <div id="bkDailyHoursWrap"></div>
+      <div id="bkDayRecordsWrap"></div>
       ${jobFormHtml('bk', {})}
     </div>
   ` : ''
@@ -1457,8 +1472,9 @@ async function renderBossDashboard(){
 
   const rowsHtml = records.map(r => `
     <tr>
+      <td>${localDateStr(r.created_at)}</td>
       <td>${r.employees.name}</td>
-      <td>${r.job_types.code}${r.job_types.is_mts ? ' (MTS)' : ''}${r.mts_subtype ? ' · ' + r.mts_subtype : ''}${r.performed_by ? ' · ' + r.performed_by : ''}${r.fotoservice ? ' · Foto' : ''}${r.custom_duration_minutes ? ' · ' + Math.round(r.custom_duration_minutes/60) + ' Std' : ''}${r.extra_arbeit_1_code ? ' · +' + r.extra_arbeit_1_code : ''}${r.extra_arbeit_2_code ? ' · +' + r.extra_arbeit_2_code : ''}</td>
+      <td>${jobDisplayLabel(r)}${r.performed_by ? ' · ' + r.performed_by : ''}${r.fotoservice ? ' · Foto' : ''}${r.custom_duration_minutes ? ' · ' + Math.round(r.custom_duration_minutes/60) + ' Std' : ''}${r.extra_arbeit_1_code ? ' · +' + r.extra_arbeit_1_code : ''}${r.extra_arbeit_2_code ? ' · +' + r.extra_arbeit_2_code : ''}</td>
       <td>${r.ref_no || '-'}</td>
       <td>${fmtEur(recordPrice(r))}</td>
     </tr>`).join('')
@@ -1553,7 +1569,7 @@ async function renderBossDashboard(){
     <div class="card">
       <label>Alle Einträge (${records.length})</label>
       <table>
-        <thead><tr><th>Mitarbeiter</th><th>Auftrag</th><th>Nr.</th><th>Betrag</th></tr></thead>
+        <thead><tr><th>Datum</th><th>Mitarbeiter</th><th>Auftrag</th><th>Nr.</th><th>Betrag</th></tr></thead>
         <tbody>${rowsHtml}</tbody>
       </table>
     </div>
@@ -1850,6 +1866,66 @@ function renderBkHoursForm(empId, dateVal, existing){
   }
 }
 
+// Admin'in "Geçmişe Kayıt Ekle" formunda seçilen çalışan+tarih için o
+// güne ait TÜM Auftrag (records) kayıtlarını listeler, tek tek silme ve
+// "Bu günü tamamen temizle" (o güne ait tüm records + daily_hours)
+// seçeneği sunar. schema_v27.sql'deki admin bypass sayesinde 48 saatten
+// eski kayıtlar da silinebilir.
+async function refreshBkDayRecords(){
+  const wrap = document.getElementById('bkDayRecordsWrap')
+  if(!wrap) return
+  const empId = document.getElementById('bkEmployeeSelect').value
+  const dateVal = document.getElementById('bkDate').value
+  if(!empId || !dateVal){
+    wrap.innerHTML = ''
+    return
+  }
+  wrap.innerHTML = `<div class="sub" style="margin:10px 0;">Lädt...</div>`
+  const empName = employees.find(e => e.id === empId)?.name || 'Mitarbeiter'
+  const { data } = await supabase.from('records').select('*, job_types(code, name, is_mts, is_variable_price, is_quantity)').eq('employee_id', empId).gte('created_at', startOfDayISO(dateVal)).lt('created_at', endOfDayISO(dateVal)).order('created_at', { ascending: false })
+  const records = data || []
+
+  wrap.innerHTML = `
+    <div class="card" style="margin:10px 0;padding:12px;">
+      <label style="margin-top:0;">${empName} — ${dateVal} tarihli Aufträge (${records.length})</label>
+      ${records.length === 0 ? '<div class="empty" style="padding:10px 0;">Bu tarihte kayıt yok</div>' : `
+        <div class="entry-list">
+          ${records.map(r => `
+            <div class="entry">
+              <div><span class="code">${r.job_types.code}</span><span class="ref">${r.ref_no ? ' · ' + r.ref_no : ''}</span></div>
+              <div class="right">
+                <span class="extra">${fmtEur(recordPrice(r))}</span>
+                <button class="del-btn" data-bkrecdel="${r.id}" title="Löschen">×</button>
+              </div>
+            </div>
+          `).join('')}
+        </div>
+      `}
+      <button class="secondary" id="bkClearDayBtn" style="margin-top:10px;color:var(--red);">🗑 Bu günü tamamen temizle</button>
+    </div>
+  `
+  wrap.querySelectorAll('[data-bkrecdel]').forEach(btn=>{
+    btn.addEventListener('click', async ()=>{
+      if(!confirm('Bu kaydı silmek istediğinize emin misiniz?')) return
+      const { error } = await supabase.from('records').delete().eq('id', btn.dataset.bkrecdel)
+      if(error){ showToast('Fehler: ' + error.message); return }
+      showToast('Gelöscht')
+      refreshBkDayRecords()
+    })
+  })
+  document.getElementById('bkClearDayBtn').addEventListener('click', async ()=>{
+    if(!confirm(`${empName} için ${dateVal} tarihindeki TÜM kayıtlar (işler + saat/şube) silinecek. Emin misiniz?`)) return
+    const results = await Promise.all(records.map(r => supabase.from('records').delete().eq('id', r.id)))
+    const recError = results.find(res => res.error)
+    if(recError){ showToast('Fehler: ' + recError.error.message); return }
+    const { error: dhError } = await supabase.from('daily_hours').delete().eq('employee_id', empId).eq('work_date', dateVal)
+    if(dhError){ showToast('Fehler: ' + dhError.message); return }
+    showToast('Tag komplett gelöscht')
+    refreshBkDayRecords()
+    refreshBkDailyHours()
+  })
+}
+
 function wireAdminBackdateForm(){
   const card = document.getElementById('adminBackdateCard')
   if(!card) return
@@ -1859,12 +1935,15 @@ function wireAdminBackdateForm(){
   document.getElementById('bkEmployeeSelect').addEventListener('change', ()=>{
     validateJobForm('bk', ()=>backdateSelectedJobType, extraValid)
     refreshBkDailyHours()
+    refreshBkDayRecords()
   })
   document.getElementById('bkDate').addEventListener('change', ()=>{
     validateJobForm('bk', ()=>backdateSelectedJobType, extraValid)
     refreshBkDailyHours()
+    refreshBkDayRecords()
   })
   refreshBkDailyHours()
+  refreshBkDayRecords()
   document.getElementById('bkAddBtn').addEventListener('click', async ()=>{
     const empId = document.getElementById('bkEmployeeSelect').value
     const dateVal = document.getElementById('bkDate').value
