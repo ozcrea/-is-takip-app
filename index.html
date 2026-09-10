@@ -274,6 +274,10 @@ function visibleJobTypes(){
 function extraArbeitEligibleJobTypes(mainJobType){
   return jobTypes.filter(j => {
     if(j.is_quantity || j.is_internal) return false
+    // Regiestunde standalone iş tipi, kendi manuel saat girişiyle (bkz.
+    // RegiestundeHoursInput) çalışır — Extra Arbeit yolundan seçilirse
+    // fiyat/süre girme imkanı olmadığından price_eur=0 no-op'a düşer.
+    if(j.code === 'Regiestunde') return false
     if(mainJobType && j.id === mainJobType.id) return false
     if(j.code === 'FOTOSERVICE'){
       if(mainJobType && FOTOSERVICE_JOB_CODES.includes(mainJobType.code)) return false
@@ -310,13 +314,17 @@ async function loadStaticData(){
 // bölüm ikisi arasında paylaşılan, prefix'lenmiş (id çakışmasını önlemek
 // için) yardımcı fonksiyonları içerir.
 
-function jobPriceLabel(j){
-  if(j.code === 'FOTOSERVICE') return 'Preis: je Filiale'
+function jobPriceLabel(j, knownBranch){
+  if(j.code === 'FOTOSERVICE'){
+    if(knownBranch && FOTOSERVICE_BRANCH_PRICE[knownBranch] !== undefined) return fmtEur(FOTOSERVICE_BRANCH_PRICE[knownBranch])
+    return 'Preis: je Filiale'
+  }
+  if(j.code === 'Regiestunde') return fmtEur(REGIESTUNDE_RATE) + ' / Std.'
   if(j.is_variable_price) return 'Preis: manuell'
   return fmtEur(j.price_eur || 0)
 }
 
-function jobFormHtml(prefix, qtyCounts){
+function jobFormHtml(prefix, qtyCounts, knownBranch){
   qtyCounts = qtyCounts || {}
   return `
     <input type="text" id="${prefix}JobSearch" placeholder="🔍 Hizmet suchen..." style="margin-bottom:10px;">
@@ -325,7 +333,7 @@ function jobFormHtml(prefix, qtyCounts){
         <div class="job-btn" data-id="${j.id}">
           <div class="job-btn-info">
             <span class="code">${j.code}${j.is_mts ? '<span class="mts-tag">MTS</span>' : ''}${j.is_quantity ? '<span class="qty-tag">Stück</span>' : ''}</span>
-            <span class="job-price">${jobPriceLabel(j)}</span>
+            <span class="job-price">${jobPriceLabel(j, knownBranch)}</span>
           </div>
           ${j.is_quantity ? `<span class="qty-count">${qtyCounts[j.id]||0}× heute</span>` : ''}
         </div>`).join('')}
@@ -363,6 +371,10 @@ function jobFormHtml(prefix, qtyCounts){
         <option value="">Keine</option>
         ${Array.from({length:10},(_,i)=>i+1).map(n=>`<option value="${n}">${n} Std</option>`).join('')}
       </select>
+    </div>
+    <div id="${prefix}RegiestundeHoursWrap" style="display:none;">
+      <label>Wie viele Stunden?</label>
+      <input type="number" id="${prefix}RegiestundeHoursInput" placeholder="z.B. 2.5" step="0.5" min="0.5">
     </div>
     <div id="${prefix}PerformerWrap" style="display:none;">
       <label>Wer hat die Arbeit ausgeführt?</label>
@@ -426,6 +438,10 @@ function validateJobForm(prefix, getSelected, extraValid){
     if(jt.code === 'Showroom Pflege'){
       ok = ok && !!$('ShowroomHoursSelect').value
     }
+    if(jt.code === 'Regiestunde'){
+      const v = $('RegiestundeHoursInput').value
+      ok = ok && v && parseFloat(v) > 0
+    }
     if(jt.allows_extra_arbeit){
       const e1 = $('ExtraArbeit1Select').value
       const e2 = $('ExtraArbeit2Select').value
@@ -447,6 +463,7 @@ function wireJobForm(prefix, getSelected, setSelected, extraValid){
       $('RefNoWrap').style.display = showRef ? 'block' : 'none'
       $('QtyWrap').style.display = jt.is_quantity ? 'block' : 'none'
       $('RegiestundeWrap').style.display = jt.is_aufbereitung ? 'block' : 'none'
+      $('RegiestundeHoursWrap').style.display = jt.code === 'Regiestunde' ? 'block' : 'none'
       $('PriceWrap').style.display = (jt.is_variable_price && jt.code !== 'FOTOSERVICE') ? 'block' : 'none'
       $('PerformerWrap').style.display = jt.code === 'SR-Delle' ? 'block' : 'none'
       $('MtsTypeWrap').style.display = jt.code === 'MTS-SR' ? 'block' : 'none'
@@ -459,6 +476,7 @@ function wireJobForm(prefix, getSelected, setSelected, extraValid){
         $('ExtraArbeit2Select').innerHTML = optsHtml
       }
       if(!jt.is_aufbereitung) $('Regiestunde').value = ''
+      if(jt.code !== 'Regiestunde') $('RegiestundeHoursInput').value = ''
       if(jt.code !== 'SR-Delle') $('PerformerSelect').value = ''
       if(jt.code !== 'MTS-SR') $('MtsTypeSelect').value = ''
       if(jt.code !== 'Showroom Pflege') $('ShowroomHoursSelect').value = ''
@@ -468,7 +486,7 @@ function wireJobForm(prefix, getSelected, setSelected, extraValid){
       validateJobForm(prefix, getSelected, extraValid)
     })
   })
-  ;['RefNo','QtyInput','CustomPrice'].forEach(id=>{
+  ;['RefNo','QtyInput','CustomPrice','RegiestundeHoursInput'].forEach(id=>{
     $(id).addEventListener('input', ()=>validateJobForm(prefix, getSelected, extraValid))
   })
   ;['PerformerSelect','MtsTypeSelect','ShowroomHoursSelect','ExtraArbeit1Select','ExtraArbeit2Select'].forEach(id=>{
@@ -491,7 +509,12 @@ function readJobFormValues(prefix, jt){
   }
   return {
     refNo: jt.requires_ref === false ? null : $('RefNo').value.trim(),
-    regiestunde: $('Regiestunde').value ? parseInt($('Regiestunde').value) : null,
+    // Regiestunde standalone job tipi seçiliyse, saat manuel girilen input'tan
+    // (ondalıklı da olabilir) okunur; diğer iş tiplerinde ise mevcut "Regiestunde
+    // Aufbereitung" ek alanı dropdown'ından (tam sayı, 1-10) okunur.
+    regiestunde: jt.code === 'Regiestunde'
+      ? ($('RegiestundeHoursInput').value ? parseFloat($('RegiestundeHoursInput').value) : null)
+      : ($('Regiestunde').value ? parseInt($('Regiestunde').value) : null),
     customPrice: $('CustomPrice').value ? parseFloat($('CustomPrice').value) : null,
     performedBy: $('PerformerSelect').value || null,
     mtsSubtype: $('MtsTypeSelect').value || null,
@@ -829,6 +852,9 @@ async function renderEmployeeDay(){
 
   const savedHours = hoursRes.data?.hours ?? null
   const savedBranch = hoursRes.data?.branch ?? null
+  // SmartRepair hesabı, günlük saat/şube girme zorunluluğundan muaf —
+  // bu hesap doğrudan Auftrag ekleyebilmeli (bkz. wireJobForm çağrısı aşağıda).
+  const isBranchExempt = currentEmployee.akt_no === 'SmartRepair'
   const todaysRecords = recordsRes.data || []
 
   const qtyCounts = {}
@@ -870,7 +896,10 @@ async function renderEmployeeDay(){
       <label>Wie viele Stunden hast du heute gearbeitet (ohne Pause)?</label>
       ${savedHours !== null ? `
         <div class="hours-saved">✓ Gespeichert: ${savedHours} Std · ${savedBranch || 'keine Filiale angegeben'}</div>
-        <button class="secondary" id="editHoursBtn" style="margin-top:10px;">Ändern</button>
+        <div style="display:flex;gap:8px;margin-top:10px;">
+          <button class="secondary" id="editHoursBtn">Ändern</button>
+          <button class="secondary" id="deleteHoursBtn" style="color:var(--red);">Löschen</button>
+        </div>
       ` : `
         <div class="hours-row" style="margin-bottom:14px;">
           <input type="number" id="hoursInput" placeholder="z.B. 8.5" step="0.5" min="0" max="16">
@@ -885,8 +914,8 @@ async function renderEmployeeDay(){
 
     <div class="card">
       <label>Neuen Auftrag hinzufügen</label>
-      ${!savedBranch ? `<div class="sub" style="color:var(--red);margin:-4px 0 14px;">⚠ Bitte zuerst oben deine Filiale für heute speichern.</div>` : ''}
-      ${jobFormHtml('emp', qtyCounts)}
+      ${!savedBranch && !isBranchExempt ? `<div class="sub" style="color:var(--red);margin:-4px 0 14px;">⚠ Bitte zuerst oben deine Filiale für heute speichern.</div>` : ''}
+      ${jobFormHtml('emp', qtyCounts, savedBranch)}
     </div>
 
     <div class="card">
@@ -922,6 +951,13 @@ async function renderEmployeeDay(){
       const br = prompt('Welche Filiale? (Ausschläger Weg / Horn / Wiesendamm)', savedBranch || '')
       await saveHours(num, br || savedBranch)
     })
+    document.getElementById('deleteHoursBtn').addEventListener('click', async ()=>{
+      if(!confirm('Diese Stunden/Filiale-Eintragung löschen?')) return
+      const { error } = await supabase.from('daily_hours').delete().eq('employee_id', currentEmployee.id).eq('work_date', today)
+      if(error){ showToast('Fehler: ' + error.message); return }
+      showToast('Gelöscht')
+      renderEmployeeDay()
+    })
   } else {
     document.querySelectorAll('.branch-btn').forEach(btn=>{
       btn.addEventListener('click', ()=>{
@@ -948,7 +984,7 @@ async function renderEmployeeDay(){
   }
 
   selectedJobType = null
-  wireJobForm('emp', ()=>selectedJobType, (jt)=>{ selectedJobType = jt }, ()=>!!savedBranch)
+  wireJobForm('emp', ()=>selectedJobType, (jt)=>{ selectedJobType = jt }, ()=>!!savedBranch || isBranchExempt)
   document.getElementById('empAddBtn').addEventListener('click', addRecord)
   document.getElementById('monthlyReportBtn').addEventListener('click', ()=>renderEmployeeMonthlyReport())
   document.querySelectorAll('[data-del]').forEach(btn=>{
@@ -1740,11 +1776,12 @@ async function refreshBkDailyHours(){
     return
   }
   wrap.innerHTML = `<div class="sub" style="margin:10px 0;">Lädt...</div>`
+  const empName = employees.find(e => e.id === empId)?.name || 'Mitarbeiter'
   const { data } = await supabase.from('daily_hours').select('*').eq('employee_id', empId).eq('work_date', dateVal).maybeSingle()
   if(data){
     wrap.innerHTML = `
       <div class="card" style="margin:10px 0;padding:12px;">
-        <label style="margin-top:0;">Stunden/Filiale am ${dateVal}</label>
+        <label style="margin-top:0;">${empName} — Stunden/Filiale am ${dateVal}</label>
         <div class="hours-saved">✓ Gespeichert: ${data.hours} Std · ${data.branch || 'keine Filiale angegeben'}</div>
         <div style="display:flex;gap:8px;margin-top:10px;">
           <button class="secondary" id="bkHoursEditBtn">Bearbeiten</button>
@@ -1768,12 +1805,14 @@ async function refreshBkDailyHours(){
 function renderBkHoursForm(empId, dateVal, existing){
   const wrap = document.getElementById('bkDailyHoursWrap')
   if(!wrap) return
+  const empName = employees.find(e => e.id === empId)?.name || 'Mitarbeiter'
   wrap.innerHTML = `
     <div class="card" style="margin:10px 0;padding:12px;">
-      <label style="margin-top:0;">${existing ? 'Stunden/Filiale bearbeiten' : 'Stunden/Filiale hinzufügen'} — ${dateVal}</label>
+      <label style="margin-top:0;">${empName} bu tarihte (${dateVal}) kaç saat çalıştı?</label>
       <div class="hours-row" style="margin-bottom:10px;">
         <input type="number" id="bkHoursInput" placeholder="z.B. 8" step="0.5" min="0" max="16" value="${existing ? existing.hours : ''}">
       </div>
+      <label>${empName} bu tarihte hangi şubede çalıştı?</label>
       <div class="job-list" id="bkBranchList" style="margin-bottom:10px;">
         ${BRANCHES.map(b => `<div class="job-btn branch-btn${existing && existing.branch === b ? ' selected' : ''}" data-branch="${b}"><span class="code">${b}</span></div>`).join('')}
       </div>
