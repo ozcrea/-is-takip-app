@@ -859,9 +859,15 @@ async function renderEmployeeDay(){
   main.innerHTML = `<div class="empty">Lädt...</div>`
 
   const today = todayStr()
+  // Kendi girdiği kayıtları sadece "bugün" ile sınırlamak, gece yarısından
+  // hemen önce/sonra yapılan yanlış bir kaydı çalışanın kendi listesinde
+  // hiç GÖREMEMESİNE (dolayısıyla silememesine) yol açıyordu — halbuki RLS
+  // zaten son 48 saatteki HERHANGİ bir kaydın silinmesine izin veriyor.
+  // Bu yüzden görüntüleme/silme listesi "dün + bugün"e genişletildi.
+  const yesterday = (() => { const d = new Date(); d.setDate(d.getDate() - 1); return d.toISOString().slice(0,10) })()
   const [hoursRes, recordsRes] = await Promise.all([
     supabase.from('daily_hours').select('*').eq('employee_id', currentEmployee.id).eq('work_date', today).maybeSingle(),
-    supabase.from('records').select('*, job_types(code, name, is_aufbereitung, is_mts, is_variable_price, is_quantity)').eq('employee_id', currentEmployee.id).gte('created_at', startOfDayISO(today)).lt('created_at', endOfDayISO(today)).order('created_at', { ascending: false })
+    supabase.from('records').select('*, job_types(code, name, is_aufbereitung, is_mts, is_variable_price, is_quantity)').eq('employee_id', currentEmployee.id).gte('created_at', startOfDayISO(yesterday)).lt('created_at', endOfDayISO(today)).order('created_at', { ascending: false })
   ])
 
   const savedHours = hoursRes.data?.hours ?? null
@@ -869,7 +875,9 @@ async function renderEmployeeDay(){
   // SmartRepair hesabı, günlük saat/şube girme zorunluluğundan muaf —
   // bu hesap doğrudan Auftrag ekleyebilmeli (bkz. wireJobForm çağrısı aşağıda).
   const isBranchExempt = currentEmployee.akt_no === 'SmartRepair'
-  const todaysRecords = recordsRes.data || []
+  const recentRecords = recordsRes.data || []
+  // qtyCounts ("×N heute" göstergesi) SADECE bugünün kayıtlarını saymalı.
+  const todaysRecords = recentRecords.filter(r => localDateStr(r.created_at) === today)
 
   const qtyCounts = {}
   todaysRecords.forEach(r=>{ if(r.job_types.is_quantity) qtyCounts[r.job_type_id] = (qtyCounts[r.job_type_id]||0) + 1 })
@@ -907,6 +915,7 @@ async function renderEmployeeDay(){
 
     <button class="secondary" id="monthlyReportBtn" style="margin-bottom:14px;">📅 Monatsbericht</button>
 
+    ${!isHiddenAdmin ? `
     <div class="card">
       <label>Wie viele Stunden hast du heute gearbeitet (ohne Pause)?</label>
       ${savedHours !== null ? `
@@ -932,14 +941,16 @@ async function renderEmployeeDay(){
       ${!savedBranch && !isBranchExempt ? `<div class="sub" style="color:var(--red);margin:-4px 0 14px;">⚠ Bitte zuerst oben deine Filiale für heute speichern.</div>` : ''}
       ${jobFormHtml('emp', qtyCounts, savedBranch)}
     </div>
+    ` : ''}
 
     <div class="card">
-      <label>${todayLabel()} — Deine heutigen Einträge (${todaysRecords.length})</label>
+      <label>${todayLabel()} — Deine Einträge (letzte 48 Std., ${recentRecords.length})</label>
       <div class="entry-list" id="entryList">
-        ${todaysRecords.length === 0 ? '<div class="empty">Noch keine Einträge</div>' : todaysRecords.map(r => `
+        ${recentRecords.length === 0 ? '<div class="empty">Noch keine Einträge</div>' : recentRecords.map(r => `
           <div class="entry">
             <div><span class="code">${r.job_types.code}</span><span class="ref">${r.ref_no || ''}${r.performed_by ? ' · ' + r.performed_by : ''}${r.mts_subtype ? ' · ' + r.mts_subtype : ''}</span></div>
             <div class="right">
+              ${localDateStr(r.created_at) !== today ? `<span class="extra">${localDateStr(r.created_at)}</span>` : ''}
               ${r.regiestunde ? `<span class="extra">+${r.regiestunde} Std</span>` : ''}
               ${r.custom_duration_minutes ? `<span class="extra">${Math.round(r.custom_duration_minutes/60)} Std</span>` : ''}
               ${r.fotoservice ? `<span class="extra">Fotoservice</span>` : ''}
@@ -957,39 +968,41 @@ async function renderEmployeeDay(){
 
   let pickedBranch = null
 
-  if(savedHours !== null){
-    document.getElementById('editHoursBtn').addEventListener('click', async ()=>{
-      const val = prompt('Wie viele Stunden hast du heute gearbeitet (ohne Pause)?', savedHours)
-      if(val === null) return
-      const num = parseFloat(val.replace(',','.'))
-      if(isNaN(num)) { showToast('Ungültige Zahl'); return }
-      const br = prompt('Welche Filiale? (Ausschläger Weg / Horn / Wiesendamm)', savedBranch || '')
-      await saveHours(num, br || savedBranch)
-    })
-    document.getElementById('deleteHoursBtn').addEventListener('click', async ()=>{
-      if(!confirm('Diese Stunden/Filiale-Eintragung löschen?')) return
-      const { error } = await supabase.from('daily_hours').delete().eq('employee_id', currentEmployee.id).eq('work_date', today)
-      if(error){ showToast('Fehler: ' + error.message); return }
-      showToast('Gelöscht')
-      renderEmployeeDay()
-    })
-  } else {
-    document.querySelectorAll('.branch-btn').forEach(btn=>{
-      btn.addEventListener('click', ()=>{
-        document.querySelectorAll('.branch-btn').forEach(b=>b.classList.remove('selected'))
-        btn.classList.add('selected')
-        pickedBranch = btn.dataset.branch
-        validateHoursSave()
+  if(!isHiddenAdmin){
+    if(savedHours !== null){
+      document.getElementById('editHoursBtn').addEventListener('click', async ()=>{
+        const val = prompt('Wie viele Stunden hast du heute gearbeitet (ohne Pause)?', savedHours)
+        if(val === null) return
+        const num = parseFloat(val.replace(',','.'))
+        if(isNaN(num)) { showToast('Ungültige Zahl'); return }
+        const br = prompt('Welche Filiale? (Ausschläger Weg / Horn / Wiesendamm)', savedBranch || '')
+        await saveHours(num, br || savedBranch)
       })
-    })
-    document.getElementById('hoursInput').addEventListener('input', validateHoursSave)
-    document.getElementById('saveHoursBtn').addEventListener('click', async ()=>{
-      const val = document.getElementById('hoursInput').value
-      const num = parseFloat(val)
-      if(isNaN(num) || num <= 0){ showToast('Bitte gültige Stundenzahl eingeben'); return }
-      if(!pickedBranch){ showToast('Bitte Filiale auswählen'); return }
-      await saveHours(num, pickedBranch)
-    })
+      document.getElementById('deleteHoursBtn').addEventListener('click', async ()=>{
+        if(!confirm('Diese Stunden/Filiale-Eintragung löschen?')) return
+        const { error } = await supabase.from('daily_hours').delete().eq('employee_id', currentEmployee.id).eq('work_date', today)
+        if(error){ showToast('Fehler: ' + error.message); return }
+        showToast('Gelöscht')
+        renderEmployeeDay()
+      })
+    } else {
+      document.querySelectorAll('.branch-btn').forEach(btn=>{
+        btn.addEventListener('click', ()=>{
+          document.querySelectorAll('.branch-btn').forEach(b=>b.classList.remove('selected'))
+          btn.classList.add('selected')
+          pickedBranch = btn.dataset.branch
+          validateHoursSave()
+        })
+      })
+      document.getElementById('hoursInput').addEventListener('input', validateHoursSave)
+      document.getElementById('saveHoursBtn').addEventListener('click', async ()=>{
+        const val = document.getElementById('hoursInput').value
+        const num = parseFloat(val)
+        if(isNaN(num) || num <= 0){ showToast('Bitte gültige Stundenzahl eingeben'); return }
+        if(!pickedBranch){ showToast('Bitte Filiale auswählen'); return }
+        await saveHours(num, pickedBranch)
+      })
+    }
   }
 
   function validateHoursSave(){
@@ -999,8 +1012,10 @@ async function renderEmployeeDay(){
   }
 
   selectedJobType = null
-  wireJobForm('emp', ()=>selectedJobType, (jt)=>{ selectedJobType = jt }, ()=>!!savedBranch || isBranchExempt)
-  document.getElementById('empAddBtn').addEventListener('click', addRecord)
+  if(!isHiddenAdmin){
+    wireJobForm('emp', ()=>selectedJobType, (jt)=>{ selectedJobType = jt }, ()=>!!savedBranch || isBranchExempt)
+    document.getElementById('empAddBtn').addEventListener('click', addRecord)
+  }
   document.getElementById('monthlyReportBtn').addEventListener('click', ()=>renderEmployeeMonthlyReport())
   document.querySelectorAll('[data-del]').forEach(btn=>{
     btn.addEventListener('click', async ()=>{
@@ -1882,7 +1897,7 @@ async function refreshBkDayRecords(){
   }
   wrap.innerHTML = `<div class="sub" style="margin:10px 0;">Lädt...</div>`
   const empName = employees.find(e => e.id === empId)?.name || 'Mitarbeiter'
-  const { data } = await supabase.from('records').select('*, job_types(code, name, is_mts, is_variable_price, is_quantity)').eq('employee_id', empId).gte('created_at', startOfDayISO(dateVal)).lt('created_at', endOfDayISO(dateVal)).order('created_at', { ascending: false })
+  const { data } = await supabase.from('records').select('*, job_types(code, name, is_mts, is_variable_price, is_quantity, is_aufbereitung, requires_ref)').eq('employee_id', empId).gte('created_at', startOfDayISO(dateVal)).lt('created_at', endOfDayISO(dateVal)).order('created_at', { ascending: false })
   const records = data || []
 
   wrap.innerHTML = `
@@ -1891,10 +1906,11 @@ async function refreshBkDayRecords(){
       ${records.length === 0 ? '<div class="empty" style="padding:10px 0;">Bu tarihte kayıt yok</div>' : `
         <div class="entry-list">
           ${records.map(r => `
-            <div class="entry">
+            <div class="entry" data-bkrecrow="${r.id}">
               <div><span class="code">${r.job_types.code}</span><span class="ref">${r.ref_no ? ' · ' + r.ref_no : ''}</span></div>
               <div class="right">
                 <span class="extra">${fmtEur(recordPrice(r))}</span>
+                <button class="secondary" data-bkrecedit="${r.id}" style="padding:4px 8px;">Bearbeiten</button>
                 <button class="del-btn" data-bkrecdel="${r.id}" title="Löschen">×</button>
               </div>
             </div>
@@ -1913,6 +1929,12 @@ async function refreshBkDayRecords(){
       refreshBkDayRecords()
     })
   })
+  wrap.querySelectorAll('[data-bkrecedit]').forEach(btn=>{
+    btn.addEventListener('click', ()=>{
+      const r = records.find(rec => rec.id === btn.dataset.bkrecedit)
+      if(r) renderBkRecordEditForm(r)
+    })
+  })
   document.getElementById('bkClearDayBtn').addEventListener('click', async ()=>{
     if(!confirm(`${empName} için ${dateVal} tarihindeki TÜM kayıtlar (işler + saat/şube) silinecek. Emin misiniz?`)) return
     const results = await Promise.all(records.map(r => supabase.from('records').delete().eq('id', r.id)))
@@ -1923,6 +1945,49 @@ async function refreshBkDayRecords(){
     showToast('Tag komplett gelöscht')
     refreshBkDayRecords()
     refreshBkDailyHours()
+  })
+}
+
+// Bir Auftrag kaydının AKT-Nummer, (varsa) manuel fiyatı ve (varsa)
+// Regiestunde saatini düzenlemek için küçük bir inline form. İş tipini,
+// miktarı, Extra Arbeit seçimlerini veya MTS alt türünü değiştirmek
+// KAPSAM DIŞI — bunlar için kayıt silinip yeniden eklenmeli.
+// schema_v28.sql'deki admin-only UPDATE politikası gerekiyor.
+function renderBkRecordEditForm(r){
+  const row = document.querySelector(`[data-bkrecrow="${r.id}"]`)
+  if(!row) return
+  const showRef = r.job_types.requires_ref !== false
+  const showPrice = r.job_types.is_variable_price && r.job_types.code !== 'FOTOSERVICE'
+  const showRegiestunde = r.job_types.is_aufbereitung || r.job_types.code === 'Regiestunde'
+  row.outerHTML = `
+    <div class="entry" data-bkrecrow="${r.id}" style="flex-direction:column;align-items:stretch;gap:8px;">
+      <div class="code">${r.job_types.code} — bearbeiten</div>
+      ${showRef ? `<div><label style="margin-top:0;">AKT-Nummer</label><input type="text" id="bkEditRef-${r.id}" value="${r.ref_no || ''}"></div>` : ''}
+      ${showPrice ? `<div><label style="margin-top:0;">Preis (€)</label><input type="number" id="bkEditPrice-${r.id}" value="${r.custom_price ?? ''}" step="0.01" min="0"></div>` : ''}
+      ${showRegiestunde ? `<div><label style="margin-top:0;">Regiestunde (Std.)</label><input type="number" id="bkEditRegie-${r.id}" value="${r.regiestunde ?? ''}" step="0.5" min="0"></div>` : ''}
+      <div style="display:flex;gap:8px;">
+        <button class="primary" id="bkEditSave-${r.id}">Speichern</button>
+        <button class="secondary" id="bkEditCancel-${r.id}">Abbrechen</button>
+      </div>
+    </div>
+  `
+  document.getElementById(`bkEditCancel-${r.id}`).addEventListener('click', refreshBkDayRecords)
+  document.getElementById(`bkEditSave-${r.id}`).addEventListener('click', async ()=>{
+    const payload = {}
+    if(showRef) payload.ref_no = document.getElementById(`bkEditRef-${r.id}`).value.trim() || null
+    if(showPrice){
+      const val = document.getElementById(`bkEditPrice-${r.id}`).value
+      if(!val || parseFloat(val) <= 0){ showToast('Bitte gültigen Preis eingeben'); return }
+      payload.custom_price = parseFloat(val)
+    }
+    if(showRegiestunde){
+      const val = document.getElementById(`bkEditRegie-${r.id}`).value
+      payload.regiestunde = val ? parseFloat(val) : null
+    }
+    const { error } = await supabase.from('records').update(payload).eq('id', r.id)
+    if(error){ showToast('Fehler: ' + error.message); return }
+    showToast('Gespeichert')
+    refreshBkDayRecords()
   })
 }
 
