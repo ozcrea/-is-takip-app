@@ -891,15 +891,13 @@ async function renderEmployeeDay(){
   main.innerHTML = `<div class="empty">Lädt...</div>`
 
   const today = todayStr()
-  // Kendi girdiği kayıtları sadece "bugün" ile sınırlamak, gece yarısından
-  // hemen önce/sonra yapılan yanlış bir kaydı çalışanın kendi listesinde
-  // hiç GÖREMEMESİNE (dolayısıyla silememesine) yol açıyordu — halbuki RLS
-  // zaten son 48 saatteki HERHANGİ bir kaydın silinmesine izin veriyor.
-  // Bu yüzden görüntüleme/silme listesi "dün + bugün"e genişletildi.
-  const yesterday = (() => { const d = new Date(); d.setDate(d.getDate() - 1); return d.toISOString().slice(0,10) })()
+  // Karar değişikliği: çalışanın kendi Einträge listesi/silme yetkisi
+  // 48 saat yerine "aynı takvim günü" ile sınırlı (bkz. schema_v30.sql'deki
+  // records_delete_recent — Europe/Berlin takvim günü kontrolü). Bu yüzden
+  // liste de tekrar SADECE bugünle sınırlandırıldı.
   const [hoursRes, recordsRes] = await Promise.all([
     supabase.from('daily_hours').select('*').eq('employee_id', currentEmployee.id).eq('work_date', today).maybeSingle(),
-    supabase.from('records').select('*, job_types(code, name, is_aufbereitung, is_mts, is_variable_price, is_quantity)').eq('employee_id', currentEmployee.id).gte('created_at', startOfDayISO(yesterday)).lt('created_at', endOfDayISO(today)).order('created_at', { ascending: false })
+    supabase.from('records').select('*, job_types(code, name, is_aufbereitung, is_mts, is_variable_price, is_quantity)').eq('employee_id', currentEmployee.id).gte('created_at', startOfDayISO(today)).lt('created_at', endOfDayISO(today)).order('created_at', { ascending: false })
   ])
 
   const savedHours = hoursRes.data?.hours ?? null
@@ -907,9 +905,7 @@ async function renderEmployeeDay(){
   // SmartRepair hesabı, günlük saat/şube girme zorunluluğundan muaf —
   // bu hesap doğrudan Auftrag ekleyebilmeli (bkz. wireJobForm çağrısı aşağıda).
   const isBranchExempt = currentEmployee.akt_no === 'SmartRepair'
-  const recentRecords = recordsRes.data || []
-  // qtyCounts ("×N heute" göstergesi) SADECE bugünün kayıtlarını saymalı.
-  const todaysRecords = recentRecords.filter(r => localDateStr(r.created_at) === today)
+  const todaysRecords = recordsRes.data || []
 
   const qtyCounts = {}
   todaysRecords.forEach(r=>{ if(r.job_types.is_quantity) qtyCounts[r.job_type_id] = (qtyCounts[r.job_type_id]||0) + 1 })
@@ -976,13 +972,12 @@ async function renderEmployeeDay(){
     ` : ''}
 
     <div class="card">
-      <label>${todayLabel()} — Deine Einträge (letzte 48 Std., ${recentRecords.length})</label>
+      <label>${todayLabel()} — Deine heutigen Einträge (${todaysRecords.length})</label>
       <div class="entry-list" id="entryList">
-        ${recentRecords.length === 0 ? '<div class="empty">Noch keine Einträge</div>' : recentRecords.map(r => `
+        ${todaysRecords.length === 0 ? '<div class="empty">Noch keine Einträge</div>' : todaysRecords.map(r => `
           <div class="entry">
             <div><span class="code">${r.job_types.code}</span><span class="ref">${r.ref_no || ''}${r.performed_by ? ' · ' + r.performed_by : ''}${r.mts_subtype ? ' · ' + r.mts_subtype : ''}</span></div>
             <div class="right">
-              ${localDateStr(r.created_at) !== today ? `<span class="extra">${localDateStr(r.created_at)}</span>` : ''}
               ${r.regiestunde ? `<span class="extra">+${r.regiestunde} Std</span>` : ''}
               ${r.custom_duration_minutes ? `<span class="extra">${Math.round(r.custom_duration_minutes/60)} Std</span>` : ''}
               ${r.fotoservice ? `<span class="extra">Fotoservice</span>` : ''}
