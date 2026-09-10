@@ -129,11 +129,29 @@
   .gate-screen .lock{ font-size:32px; margin-bottom:18px; }
 
   @media print{
+    /* Koyu tema, renk değişkenlerinin (--ink, --steel, vb.) kök seviyesinde
+       ezilmesiyle kapatılıyor — uygulamanın hemen hemen tüm bileşenleri
+       renklerini var(--xxx) üzerinden aldığı için, tek tek her seçiciyi
+       ezmek yerine burada kökten beyaz/siyah'a çevirmek yeterli ve daha
+       güvenilir (yeni bir bileşen eklendiğinde de otomatik kapsanır). */
+    :root{
+      --graphite:#fff; --steel:#fff; --steel-2:#fff;
+      --amber:#000; --green:#000; --red:#000; --blue:#000; --purple:#000;
+      --ink:#000; --ink-dim:#333; --line:#999;
+    }
     header, nav, .refresh, #pdfBtn, .del-btn, .range-chips, .search-wrap,
     #adminBackdateCard, input, select, #employeeFilterSelect{ display:none !important; }
     body{ background:#fff; color:#000; }
     .card{ border:1px solid #999; break-inside:avoid; background:#fff; }
     .amount, .revenue-total, .stat .n{ color:#000 !important; }
+    /* Tablolar: ekranda mobil için ayarlanmış min-width, yazdırmada
+       kaydırma çubuğuna ve kesilmiş sütunlara yol açıyordu — sayfaya
+       tam sığacak şekilde serbest bırakılıyor. */
+    .table-wrap{ overflow:visible !important; }
+    .table-wrap table{ min-width:0 !important; width:100% !important; }
+    table{ font-size:10px !important; }
+    th, td{ padding:4px 6px !important; }
+    .print-hide-col{ display:none !important; }
   }
 </style>
 </head>
@@ -1699,7 +1717,7 @@ async function renderBranchCategoryReport(monthStr){
   const endDate = `${monthStr}-${String(lastDay).padStart(2,'0')}`
 
   const [recordsRes, hoursRes] = await Promise.all([
-    supabase.from('records').select('*, employees(name, akt_no), job_types(category, is_mts, code)').gte('created_at', startOfDayISO(startDate)).lt('created_at', endOfDayISO(endDate)),
+    supabase.from('records').select('*, employees(name, akt_no), job_types(category, is_mts, code, price_eur, is_variable_price)').gte('created_at', startOfDayISO(startDate)).lt('created_at', endOfDayISO(endDate)),
     supabase.from('daily_hours').select('*, employees(name, akt_no)').gte('work_date', startDate).lte('work_date', endDate)
   ])
   const records = recordsRes.data || []
@@ -1778,7 +1796,7 @@ async function renderMtsProformaReport(monthStr){
   const lastDay = new Date(y, m, 0).getDate()
   const endDate = `${monthStr}-${String(lastDay).padStart(2,'0')}`
 
-  const { data } = await supabase.from('records').select('*, employees(name, akt_no), job_types(code, name, is_mts, is_variable_price)').gte('created_at', startOfDayISO(startDate)).lt('created_at', endOfDayISO(endDate)).order('created_at', { ascending: true })
+  const { data } = await supabase.from('records').select('*, employees(name, akt_no), job_types(code, name, is_mts, is_variable_price, price_eur)').gte('created_at', startOfDayISO(startDate)).lt('created_at', endOfDayISO(endDate)).order('created_at', { ascending: true })
   const records = (data || []).filter(r => r.job_types.is_mts)
   const total = records.reduce((sum, r) => sum + recordPrice(r), 0)
 
@@ -1794,12 +1812,12 @@ async function renderMtsProformaReport(monthStr){
       ${records.length === 0 ? '<div class="empty">Keine MTS-Aufträge in diesem Monat</div>' : `
         <div class="table-wrap">
           <table>
-            <thead><tr><th>Datum</th><th>Mitarbeiter</th><th>Bezeichnung</th><th>Nr.</th><th>Preis</th></tr></thead>
+            <thead><tr><th>Datum</th><th class="print-hide-col">Mitarbeiter</th><th>Bezeichnung</th><th>Nr.</th><th>Preis</th></tr></thead>
             <tbody>
               ${records.map(r => `
                 <tr>
                   <td>${formatDateDE(localDateStr(r.created_at))}</td>
-                  <td>${r.employees.name}</td>
+                  <td class="print-hide-col">${r.employees.name}</td>
                   <td>${jobDisplayLabel(r)}</td>
                   <td>${r.ref_no || '-'}</td>
                   <td>${fmtEur(recordPrice(r))}</td>
@@ -1984,7 +2002,7 @@ async function refreshBkDayRecords(){
   }
   wrap.innerHTML = `<div class="sub" style="margin:10px 0;">Lädt...</div>`
   const empName = employees.find(e => e.id === empId)?.name || 'Mitarbeiter'
-  const { data } = await supabase.from('records').select('*, job_types(code, name, is_mts, is_variable_price, is_quantity, is_aufbereitung, requires_ref)').eq('employee_id', empId).gte('created_at', startOfDayISO(dateVal)).lt('created_at', endOfDayISO(dateVal)).order('created_at', { ascending: false })
+  const { data } = await supabase.from('records').select('*, job_types(code, name, is_mts, is_variable_price, is_quantity, is_aufbereitung, requires_ref, price_eur)').eq('employee_id', empId).gte('created_at', startOfDayISO(dateVal)).lt('created_at', endOfDayISO(dateVal)).order('created_at', { ascending: false })
   const records = data || []
 
   wrap.innerHTML = `
