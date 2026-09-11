@@ -838,7 +838,11 @@ function routeAfterLogin(emp){
   localStorage.setItem(SESSION_KEY, emp.id)
   updateLogoutBtn()
   setChromeVisible(true)
-  if(emp.is_admin){
+  // is_admin: tam yetkili (gün-içi kayıt ekleme/düzenleme/silme dahil, bkz.
+  // renderEmployeeDay'deki isHiddenAdmin). is_chef_viewer: SADECE
+  // görüntüleme — Chef-Panel'e girer ama isHiddenAdmin şartı is_admin
+  // gerektirdiği için admin paneli bu hesaba hiçbir zaman görünmez.
+  if(emp.is_admin || emp.is_chef_viewer){
     bossUnlocked = true
     tabBoss.classList.add('active'); tabEmployee.classList.remove('active')
     headerTitle.textContent = 'Chef'
@@ -872,12 +876,16 @@ function renderLandingEmployeeLogin(){
   document.getElementById('landingBackBtn').addEventListener('click', renderLandingScreen)
 }
 
-// Chef-Panel girişi ARTIK gerçek bir Supabase Auth girişi (admin çalışanının
-// gerçek şifresiyle) — eskiden burası sadece client-side bir PIN kontrolüydü
-// (BOSS_PIN), hiçbir zaman gerçekten Supabase'e giriş yapmıyordu. Bu yüzden
-// admin'in delete/update RLS bypass koşulu (auth.uid() = admin'in
-// auth_user_id'si) hiçbir zaman sağlanmıyordu — admin silme/düzenleme
-// işlemleri veritabanı tarafında sessizce (veya artık açıkça) reddediliyordu.
+// Chef-Panel girişi gerçek bir Supabase Auth girişi — ama admin'in KENDİ
+// hesabıyla DEĞİL, ayrı, sadece görüntüleme yetkili "Chef" hesabıyla
+// (is_chef_viewer=true, is_admin=false, bkz. schema_v33.sql). Admin'in tam
+// yetkili girişi tamamen ayrı ve bağımsız /admin sayfasında kalır, buraya
+// hiç karışmaz. Eskiden burası sadece client-side bir PIN kontrolüydü
+// (BOSS_PIN), hiçbir zaman gerçekten Supabase'e giriş yapmıyordu — bu
+// yüzden hem admin bypass'ı çalışmıyordu HEM DE gerçek bir hesap ayrımı
+// yoktu. Chef hesabı is_admin=false olduğu için, admin'e özel gün-içi
+// kayıt ekleme/düzenleme/silme paneli (isHiddenAdmin şartı) bu hesaba asla
+// görünmez — sadece Chef panosu (raporlar, salt-okunur "Alle Einträge").
 function renderLandingBossLogin(){
   document.getElementById('landingPanel').innerHTML = `
     <input type="password" id="landingBossPassword" placeholder="Passwort">
@@ -886,12 +894,12 @@ function renderLandingBossLogin(){
   `
   document.getElementById('landingBossLoginBtn').addEventListener('click', async ()=>{
     const pw = document.getElementById('landingBossPassword').value
-    const adminEmp = employees.find(e => e.is_admin)
-    if(!adminEmp){ showToast('Admin-Konto nicht gefunden'); return }
+    const chefEmp = employees.find(e => e.is_chef_viewer)
+    if(!chefEmp){ showToast('Chef-Konto nicht gefunden'); return }
     bossRange = { mode: 'today', start: null, end: null }
-    const ok = await authenticateEmployee(adminEmp, pw)
+    const ok = await authenticateEmployee(chefEmp, pw)
     if(!ok){ showToast('Falsches Passwort'); return }
-    routeAfterLogin(adminEmp)
+    routeAfterLogin(chefEmp)
   })
   document.getElementById('landingBackBtn').addEventListener('click', renderLandingScreen)
 }
@@ -1189,12 +1197,13 @@ async function renderEmployeeMonthlyReport(monthStr){
 // ============ ŞEF PANELİ (CHEF-BEREICH) ============
 
 // Not: buraya normal bir çalışan olarak giriş yapmışken "Chef" sekmesine
-// tıklanınca gelinir. Aşağıdaki gerçek admin girişi, bu çalışanın kendi
-// Supabase Auth oturumunun yerini alır (tek bir supabase-js istemcisi aynı
-// anda yalnızca TEK bir gerçek oturum tutabilir) — yani admin girişinden
-// sonra kendi "Mitarbeiter" görünümüne dönmek isterse tekrar kendi
-// hesabıyla giriş yapması gerekir. Bu, admin RLS bypass'ının gerçekten
-// çalışabilmesi için kaçınılmaz bir mimari sonuç.
+// tıklanınca gelinir. Aşağıdaki giriş, admin DEĞİL, ayrı "Chef" hesabıyla
+// (is_chef_viewer=true) yapılır ve bu çalışanın kendi Supabase Auth
+// oturumunun yerini alır (tek bir supabase-js istemcisi aynı anda yalnızca
+// TEK bir gerçek oturum tutabilir) — yani Chef girişinden sonra kendi
+// "Mitarbeiter" görünümüne dönmek isterse tekrar kendi hesabıyla giriş
+// yapması gerekir. Admin'in tam yetkili girişi ayrı /admin sayfasında
+// kalır, buna hiç karışmaz.
 function renderBossPin(){
   main.innerHTML = `
     <div class="pin-screen">
@@ -1206,12 +1215,12 @@ function renderBossPin(){
   `
   document.getElementById('pinBtn').addEventListener('click', async ()=>{
     const pw = document.getElementById('pinInput').value
-    const adminEmp = employees.find(e => e.is_admin)
-    if(!adminEmp){ showToast('Admin-Konto nicht gefunden'); return }
+    const chefEmp = employees.find(e => e.is_chef_viewer)
+    if(!chefEmp){ showToast('Chef-Konto nicht gefunden'); return }
     bossRange = { mode: 'today', start: null, end: null }
-    const ok = await authenticateEmployee(adminEmp, pw)
+    const ok = await authenticateEmployee(chefEmp, pw)
     if(!ok){ showToast('Falsches Passwort'); return }
-    routeAfterLogin(adminEmp)
+    routeAfterLogin(chefEmp)
   })
 }
 
@@ -2404,7 +2413,7 @@ tabEmployee.addEventListener('click', ()=>{
 tabBoss.addEventListener('click', ()=>{
   tabBoss.classList.add('active'); tabEmployee.classList.remove('active')
   headerTitle.textContent = 'Chef'
-  if(currentEmployee?.is_admin || bossUnlocked){ renderBossDashboard() } else { renderBossPin() }
+  if(currentEmployee?.is_admin || currentEmployee?.is_chef_viewer || bossUnlocked){ renderBossDashboard() } else { renderBossPin() }
 })
 
 async function startApp(){
@@ -2417,18 +2426,7 @@ async function startApp(){
   if(session){
     const emp = employees.find(e => e.auth_user_id === session.user.id)
     if(emp){
-      currentEmployee = emp
-      localStorage.setItem(SESSION_KEY, emp.id)
-      updateLogoutBtn()
-      setChromeVisible(true)
-      if(emp.is_admin){
-        bossUnlocked = true
-        tabBoss.classList.add('active'); tabEmployee.classList.remove('active')
-        headerTitle.textContent = 'Chef'
-        renderBossDashboard()
-      } else {
-        renderEmployeeDay()
-      }
+      routeAfterLogin(emp)
       return
     }
   }
