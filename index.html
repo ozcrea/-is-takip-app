@@ -1037,8 +1037,9 @@ async function renderEmployeeDay(){
       })
       document.getElementById('deleteHoursBtn').addEventListener('click', async ()=>{
         if(!confirm('Diese Stunden/Filiale-Eintragung löschen?')) return
-        const { error } = await supabase.from('daily_hours').delete().eq('employee_id', currentEmployee.id).eq('work_date', today)
+        const { error, count } = await supabase.from('daily_hours').delete({ count: 'exact' }).eq('employee_id', currentEmployee.id).eq('work_date', today)
         if(error){ showToast('Fehler: ' + error.message); return }
+        if(!count){ showToast('Fehler: Konnte nicht gelöscht werden — evtl. keine Berechtigung.'); return }
         showToast('Gelöscht')
         renderEmployeeDay()
       })
@@ -1077,8 +1078,9 @@ async function renderEmployeeDay(){
   document.querySelectorAll('[data-del]').forEach(btn=>{
     btn.addEventListener('click', async ()=>{
       if(!confirm('Diesen Eintrag löschen?')) return
-      const { error } = await supabase.from('records').delete().eq('id', btn.dataset.del)
+      const { error, count } = await supabase.from('records').delete({ count: 'exact' }).eq('id', btn.dataset.del)
       if(error){ showToast('Fehler: ' + error.message); return }
+      if(!count){ showToast('Fehler: Konnte nicht gelöscht werden — evtl. keine Berechtigung mehr (nur am selben Tag löschbar).'); return }
       showToast('Gelöscht')
       renderEmployeeDay()
     })
@@ -1950,8 +1952,9 @@ async function refreshBkDailyHours(){
     document.getElementById('bkHoursEditBtn').addEventListener('click', ()=>renderBkHoursForm(empId, dateVal, data))
     document.getElementById('bkHoursDeleteBtn').addEventListener('click', async ()=>{
       if(!confirm('Diese Stunden/Filiale-Eintragung für ' + dateVal + ' löschen?')) return
-      const { error } = await supabase.from('daily_hours').delete().eq('id', data.id)
+      const { error, count } = await supabase.from('daily_hours').delete({ count: 'exact' }).eq('id', data.id)
       if(error){ showToast('Fehler: ' + error.message); return }
+      if(!count){ showToast('Fehler: Konnte nicht gelöscht werden — evtl. keine Berechtigung.'); return }
       showToast('Gelöscht')
       refreshBkDailyHours()
     })
@@ -2050,8 +2053,9 @@ async function refreshBkDayRecords(){
   wrap.querySelectorAll('[data-bkrecdel]').forEach(btn=>{
     btn.addEventListener('click', async ()=>{
       if(!confirm('Bu kaydı silmek istediğinize emin misiniz?')) return
-      const { error } = await supabase.from('records').delete().eq('id', btn.dataset.bkrecdel)
+      const { error, count } = await supabase.from('records').delete({ count: 'exact' }).eq('id', btn.dataset.bkrecdel)
       if(error){ showToast('Fehler: ' + error.message); return }
+      if(!count){ showToast('Fehler: Konnte nicht gelöscht werden — evtl. keine Berechtigung.'); return }
       showToast('Gelöscht')
       refreshBkDayRecords()
     })
@@ -2064,9 +2068,17 @@ async function refreshBkDayRecords(){
   })
   document.getElementById('bkClearDayBtn').addEventListener('click', async ()=>{
     if(!confirm(`${empName} için ${dateVal} tarihindeki TÜM kayıtlar (işler + saat/şube) silinecek. Emin misiniz?`)) return
-    const results = await Promise.all(records.map(r => supabase.from('records').delete().eq('id', r.id)))
+    const results = await Promise.all(records.map(r => supabase.from('records').delete({ count: 'exact' }).eq('id', r.id)))
     const recError = results.find(res => res.error)
     if(recError){ showToast('Fehler: ' + recError.error.message); return }
+    const deletedCount = results.reduce((sum, res) => sum + (res.count || 0), 0)
+    if(deletedCount < records.length){
+      showToast(`Fehler: Nur ${deletedCount} von ${records.length} Aufträgen konnten gelöscht werden — evtl. keine Berechtigung.`)
+      refreshBkDayRecords()
+      return
+    }
+    // daily_hours için 0 silinmesi normal olabilir (o gün için hiç saat
+    // girilmemiş olabilir) — bu yüzden burada count kontrolü YAPILMIYOR.
     const { error: dhError } = await supabase.from('daily_hours').delete().eq('employee_id', empId).eq('work_date', dateVal)
     if(dhError){ showToast('Fehler: ' + dhError.message); return }
     showToast('Tag komplett gelöscht')
