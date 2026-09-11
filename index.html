@@ -178,7 +178,6 @@ const SUPABASE_URL = "https://mfgofccidwmrqlyjbsvz.supabase.co"
 const SUPABASE_KEY = "sb_publishable_n5PXoej2lr_FQQVCjag0jw_EifWkYir"
 const supabase = createClient(SUPABASE_URL, SUPABASE_KEY)
 
-const BOSS_PIN = "1617"
 const REGIESTUNDE_RATE = 33.28
 const BRANCHES = ['Ausschläger Weg', 'Horn', 'Wiesendamm']
 const SR_DELLE_PERFORMERS = ['Delltom', 'Hesam', 'M']
@@ -873,21 +872,26 @@ function renderLandingEmployeeLogin(){
   document.getElementById('landingBackBtn').addEventListener('click', renderLandingScreen)
 }
 
+// Chef-Panel girişi ARTIK gerçek bir Supabase Auth girişi (admin çalışanının
+// gerçek şifresiyle) — eskiden burası sadece client-side bir PIN kontrolüydü
+// (BOSS_PIN), hiçbir zaman gerçekten Supabase'e giriş yapmıyordu. Bu yüzden
+// admin'in delete/update RLS bypass koşulu (auth.uid() = admin'in
+// auth_user_id'si) hiçbir zaman sağlanmıyordu — admin silme/düzenleme
+// işlemleri veritabanı tarafında sessizce (veya artık açıkça) reddediliyordu.
 function renderLandingBossLogin(){
   document.getElementById('landingPanel').innerHTML = `
-    <input type="password" id="landingPinInput" maxlength="4" inputmode="numeric" placeholder="PIN ••••">
-    <button class="btn-login" id="landingPinBtn">Anmelden</button>
+    <input type="password" id="landingBossPassword" placeholder="Passwort">
+    <button class="btn-login" id="landingBossLoginBtn">Anmelden</button>
     <button class="btn-boss" id="landingBackBtn">← Zurück</button>
   `
-  document.getElementById('landingPinBtn').addEventListener('click', ()=>{
-    if(document.getElementById('landingPinInput').value === BOSS_PIN){
-      bossUnlocked = true
-      bossRange = { mode: 'today', start: null, end: null }
-      setChromeVisible(true)
-      tabBoss.classList.add('active'); tabEmployee.classList.remove('active')
-      headerTitle.textContent = 'Chef'
-      renderBossDashboard()
-    } else { showToast('Falsche PIN') }
+  document.getElementById('landingBossLoginBtn').addEventListener('click', async ()=>{
+    const pw = document.getElementById('landingBossPassword').value
+    const adminEmp = employees.find(e => e.is_admin)
+    if(!adminEmp){ showToast('Admin-Konto nicht gefunden'); return }
+    bossRange = { mode: 'today', start: null, end: null }
+    const ok = await authenticateEmployee(adminEmp, pw)
+    if(!ok){ showToast('Falsches Passwort'); return }
+    routeAfterLogin(adminEmp)
   })
   document.getElementById('landingBackBtn').addEventListener('click', renderLandingScreen)
 }
@@ -1184,21 +1188,30 @@ async function renderEmployeeMonthlyReport(monthStr){
 
 // ============ ŞEF PANELİ (CHEF-BEREICH) ============
 
+// Not: buraya normal bir çalışan olarak giriş yapmışken "Chef" sekmesine
+// tıklanınca gelinir. Aşağıdaki gerçek admin girişi, bu çalışanın kendi
+// Supabase Auth oturumunun yerini alır (tek bir supabase-js istemcisi aynı
+// anda yalnızca TEK bir gerçek oturum tutabilir) — yani admin girişinden
+// sonra kendi "Mitarbeiter" görünümüne dönmek isterse tekrar kendi
+// hesabıyla giriş yapması gerekir. Bu, admin RLS bypass'ının gerçekten
+// çalışabilmesi için kaçınılmaz bir mimari sonuç.
 function renderBossPin(){
   main.innerHTML = `
     <div class="pin-screen">
       <p class="eyebrow" style="color:var(--ink-dim)">Chef-Zugang</p>
-      <h2 style="font-family:'Barlow Condensed',sans-serif;font-size:24px;margin:4px 0 20px;">PIN eingeben</h2>
-      <input type="password" id="pinInput" maxlength="4" inputmode="numeric" placeholder="••••">
+      <h2 style="font-family:'Barlow Condensed',sans-serif;font-size:24px;margin:4px 0 20px;">Passwort eingeben</h2>
+      <input type="password" id="pinInput" placeholder="Passwort">
       <button class="primary" id="pinBtn" style="max-width:160px;">Anmelden</button>
     </div>
   `
-  document.getElementById('pinBtn').addEventListener('click', ()=>{
-    if(document.getElementById('pinInput').value === BOSS_PIN){
-      bossUnlocked = true
-      bossRange = { mode: 'today', start: null, end: null }
-      renderBossDashboard()
-    } else { showToast('Falsche PIN') }
+  document.getElementById('pinBtn').addEventListener('click', async ()=>{
+    const pw = document.getElementById('pinInput').value
+    const adminEmp = employees.find(e => e.is_admin)
+    if(!adminEmp){ showToast('Admin-Konto nicht gefunden'); return }
+    bossRange = { mode: 'today', start: null, end: null }
+    const ok = await authenticateEmployee(adminEmp, pw)
+    if(!ok){ showToast('Falsches Passwort'); return }
+    routeAfterLogin(adminEmp)
   })
 }
 
