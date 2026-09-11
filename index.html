@@ -2176,41 +2176,169 @@ async function refreshBkDayRecords(){
   })
 }
 
-// Bir Auftrag kaydının AKT-Nummer, (varsa) manuel fiyatı ve (varsa)
-// Regiestunde saatini düzenlemek için küçük bir inline form. İş tipini,
-// miktarı, Extra Arbeit seçimlerini veya MTS alt türünü değiştirmek
-// KAPSAM DIŞI — bunlar için kayıt silinip yeniden eklenmeli.
+// Bir Auftrag kaydının AKT-Nummer, (varsa) manuel fiyatı, (varsa) Regiestunde
+// saatini VE artık İŞ TİPİNİ de düzenlemek için inline form. İş tipi
+// değiştirildiğinde, o tipe bağlı alanlar (fiyat/süre/MTS alt türü/Showroom
+// saati/Text Aufbereitung açıklama+süre) BOŞA döner — admin yeniden girer;
+// eski tipin artık kullanılmayan alanları kaydedilirken null'lanır, aksi
+// halde eski veriler fiyat/kapasite hesaplarını sessizce bozmaya devam eder.
+// Miktar tipi (is_quantity) işler ve FOTOSERVICE hâlâ KAPSAM DIŞI — ikisi de
+// tekil kayıt düzenlemeye uymayan özel ekleme mantığına sahip (toplu satır /
+// şube sahibi ataması); bunlar için kayıt silinip yeniden eklenmeli.
 // schema_v28.sql'deki admin-only UPDATE politikası gerekiyor.
 function renderBkRecordEditForm(r){
   const row = document.querySelector(`[data-bkrecrow="${r.id}"]`)
   if(!row) return
-  const showRef = r.job_types.requires_ref !== false
-  const showPrice = r.job_types.is_variable_price && r.job_types.code !== 'FOTOSERVICE'
-  const showRegiestunde = r.job_types.is_aufbereitung || r.job_types.code === 'Regiestunde'
+  const editableJobTypes = jobTypes
+    .filter(j => j.active && !j.is_quantity && j.code !== 'FOTOSERVICE')
+    .sort((a,b)=>(a.sort_order||0)-(b.sort_order||0))
+  let selectedJt = jobTypes.find(j => j.id === r.job_type_id) || editableJobTypes[0]
+
+  function fieldsHtml(jt, blank){
+    const v = blank ? {} : r
+    const showRef = jt.requires_ref !== false
+    const showPrice = jt.is_variable_price && jt.code !== 'FOTOSERVICE'
+    const showRegiestunde = jt.is_aufbereitung || jt.code === 'Regiestunde'
+    const showMtsType = jt.code === 'MTS-SR'
+    const showShowroomHours = jt.code === 'Showroom Pflege'
+    const showPerformer = jt.code === 'SR-Delle'
+    const showTextFields = jt.code === 'Text Aufbereitung'
+    return `
+      ${showRef ? `<div><label style="margin-top:0;">AKT-Nummer</label><input type="text" id="bkEditRef-${r.id}" value="${v.ref_no || ''}"></div>` : ''}
+      ${showPrice ? `<div><label style="margin-top:0;">Preis (€)</label><input type="number" id="bkEditPrice-${r.id}" value="${v.custom_price ?? ''}" step="0.01" min="0"></div>` : ''}
+      ${showMtsType ? `<div><label style="margin-top:0;">Art</label><select id="bkEditMtsType-${r.id}"><option value="">Auswählen...</option><option value="Lack" ${v.mts_subtype==='Lack'?'selected':''}>Lack</option><option value="Delle" ${v.mts_subtype==='Delle'?'selected':''}>Delle</option></select></div>` : ''}
+      ${showShowroomHours ? `<div><label style="margin-top:0;">Dauer (Std.)</label><select id="bkEditShowroomHours-${r.id}"><option value="">Auswählen...</option>${[1,2,3,4,5].map(n=>`<option value="${n}" ${v.custom_duration_minutes===n*60?'selected':''}>${n} Std</option>`).join('')}</select></div>` : ''}
+      ${showPerformer ? `<div><label style="margin-top:0;">Wer hat die Arbeit ausgeführt?</label><select id="bkEditPerformer-${r.id}"><option value="">Auswählen...</option>${SR_DELLE_PERFORMERS.map(p=>`<option value="${p}" ${v.performed_by===p?'selected':''}>${p}</option>`).join('')}</select></div>` : ''}
+      ${showTextFields ? `
+        <div><label style="margin-top:0;">Beschreibung</label><textarea id="bkEditDesc-${r.id}" rows="3">${v.custom_description || ''}</textarea></div>
+        <div><label style="margin-top:0;">Dauer (Minuten)</label><input type="number" id="bkEditDuration-${r.id}" value="${v.custom_duration_minutes ?? ''}" min="1" step="1"></div>
+      ` : ''}
+      ${showRegiestunde ? `<div><label style="margin-top:0;">Regiestunde (Std.)</label><input type="number" id="bkEditRegie-${r.id}" value="${v.regiestunde ?? ''}" step="0.5" min="0"></div>` : ''}
+    `
+  }
+
+  function validate(jt){
+    const $ = (suffix) => document.getElementById(`bkEdit${suffix}-${r.id}`)
+    let ok = true
+    if(jt.requires_ref !== false) ok = ok && !!($('Ref')?.value.trim())
+    if(jt.is_variable_price && jt.code !== 'FOTOSERVICE'){
+      const v = $('Price')?.value
+      ok = ok && v && parseFloat(v) > 0
+    }
+    if(jt.code === 'SR-Delle') ok = ok && !!$('Performer')?.value
+    if(jt.code === 'MTS-SR') ok = ok && !!$('MtsType')?.value
+    if(jt.code === 'Showroom Pflege') ok = ok && !!$('ShowroomHours')?.value
+    if(jt.code === 'Regiestunde'){
+      const v = $('Regie')?.value
+      ok = ok && v && parseFloat(v) > 0
+    }
+    if(jt.code === 'Text Aufbereitung'){
+      const dur = $('Duration')?.value
+      ok = ok && !!$('Desc')?.value.trim() && dur && parseFloat(dur) > 0
+    }
+    const saveBtn = document.getElementById(`bkEditSave-${r.id}`)
+    if(saveBtn) saveBtn.disabled = !ok
+  }
+
+  function wireFields(jt){
+    ;['Ref','Price','Regie','Desc','Duration'].forEach(suffix=>{
+      const el = document.getElementById(`bkEdit${suffix}-${r.id}`)
+      if(el) el.addEventListener('input', ()=>validate(jt))
+    })
+    ;['MtsType','ShowroomHours','Performer'].forEach(suffix=>{
+      const el = document.getElementById(`bkEdit${suffix}-${r.id}`)
+      if(el) el.addEventListener('change', ()=>validate(jt))
+    })
+    validate(jt)
+  }
+
+  function renderFields(jt, blank){
+    document.getElementById(`bkEditFields-${r.id}`).innerHTML = fieldsHtml(jt, blank)
+    wireFields(jt)
+  }
+
   row.outerHTML = `
     <div class="entry" data-bkrecrow="${r.id}" style="flex-direction:column;align-items:stretch;gap:8px;">
-      <div class="code">${r.job_types.code} — bearbeiten</div>
-      ${showRef ? `<div><label style="margin-top:0;">AKT-Nummer</label><input type="text" id="bkEditRef-${r.id}" value="${r.ref_no || ''}"></div>` : ''}
-      ${showPrice ? `<div><label style="margin-top:0;">Preis (€)</label><input type="number" id="bkEditPrice-${r.id}" value="${r.custom_price ?? ''}" step="0.01" min="0"></div>` : ''}
-      ${showRegiestunde ? `<div><label style="margin-top:0;">Regiestunde (Std.)</label><input type="number" id="bkEditRegie-${r.id}" value="${r.regiestunde ?? ''}" step="0.5" min="0"></div>` : ''}
+      <div><label style="margin-top:0;">Auftragsart</label>
+        <select id="bkEditJobType-${r.id}">
+          ${editableJobTypes.map(j => `<option value="${j.id}" ${j.id === selectedJt.id ? 'selected' : ''}>${j.code}</option>`).join('')}
+        </select>
+      </div>
+      <div id="bkEditFields-${r.id}"></div>
       <div style="display:flex;gap:8px;">
         <button class="primary" id="bkEditSave-${r.id}">Speichern</button>
         <button class="secondary" id="bkEditCancel-${r.id}">Abbrechen</button>
       </div>
     </div>
   `
+  renderFields(selectedJt, false)
+
+  document.getElementById(`bkEditJobType-${r.id}`).addEventListener('change', (e)=>{
+    selectedJt = jobTypes.find(j => j.id === e.target.value)
+    renderFields(selectedJt, true)
+  })
   document.getElementById(`bkEditCancel-${r.id}`).addEventListener('click', refreshBkDayRecords)
   document.getElementById(`bkEditSave-${r.id}`).addEventListener('click', async ()=>{
-    const payload = {}
-    if(showRef) payload.ref_no = document.getElementById(`bkEditRef-${r.id}`).value.trim() || null
-    if(showPrice){
-      const val = document.getElementById(`bkEditPrice-${r.id}`).value
-      if(!val || parseFloat(val) <= 0){ showToast('Bitte gültigen Preis eingeben'); return }
-      payload.custom_price = parseFloat(val)
+    const $ = (suffix) => document.getElementById(`bkEdit${suffix}-${r.id}`)
+    const jt = selectedJt
+    // İş tipi değişmiş olabileceğinden, eski tipin kullandığı ama yeni tipte
+    // geçerli olmayan TÜM alanlar açıkça null'lanır — aksi halde eski veriler
+    // (ör. eski bir custom_price) yeni tip için sessizce yanlış fiyat/süre
+    // hesaplanmasına yol açar.
+    const payload = {
+      job_type_id: jt.id,
+      ref_no: null,
+      custom_price: null,
+      regiestunde: null,
+      mts_subtype: null,
+      performed_by: null,
+      custom_duration_minutes: null,
+      custom_description: null,
+      extra_arbeit_price: null,
+      extra_arbeit_minutes: null,
+      extra_arbeit_1_code: null,
+      extra_arbeit_2_code: null
     }
-    if(showRegiestunde){
-      const val = document.getElementById(`bkEditRegie-${r.id}`).value
-      payload.regiestunde = val ? parseFloat(val) : null
+    if(!FOTOSERVICE_JOB_CODES.includes(jt.code)) payload.fotoservice = false
+    if(jt.requires_ref !== false){
+      const v = $('Ref')?.value.trim()
+      if(!v){ showToast('Bitte AKT-Nummer eingeben'); return }
+      payload.ref_no = v
+    }
+    if(jt.is_variable_price && jt.code !== 'FOTOSERVICE'){
+      const v = $('Price')?.value
+      if(!v || parseFloat(v) <= 0){ showToast('Bitte gültigen Preis eingeben'); return }
+      payload.custom_price = parseFloat(v)
+    }
+    if(jt.code === 'SR-Delle'){
+      const v = $('Performer')?.value
+      if(!v){ showToast('Bitte auswählen, wer die Arbeit ausgeführt hat'); return }
+      payload.performed_by = v
+    }
+    if(jt.code === 'MTS-SR'){
+      const v = $('MtsType')?.value
+      if(!v){ showToast('Bitte Art auswählen'); return }
+      payload.mts_subtype = v
+    }
+    if(jt.code === 'Showroom Pflege'){
+      const v = $('ShowroomHours')?.value
+      if(!v){ showToast('Bitte Dauer auswählen'); return }
+      payload.custom_duration_minutes = parseInt(v) * 60
+    }
+    if(jt.code === 'Regiestunde'){
+      const v = $('Regie')?.value
+      if(!v || parseFloat(v) <= 0){ showToast('Bitte gültige Stundenzahl eingeben'); return }
+      payload.regiestunde = parseFloat(v)
+    } else if(jt.is_aufbereitung){
+      const v = $('Regie')?.value
+      payload.regiestunde = v ? parseFloat(v) : null
+    }
+    if(jt.code === 'Text Aufbereitung'){
+      const desc = $('Desc')?.value.trim()
+      const dur = $('Duration')?.value
+      if(!desc || !dur || parseFloat(dur) <= 0){ showToast('Bitte Beschreibung und Dauer ausfüllen'); return }
+      payload.custom_description = desc
+      payload.custom_duration_minutes = parseInt(dur)
     }
     const { error } = await supabase.from('records').update(payload).eq('id', r.id)
     if(error){ showToast('Fehler: ' + error.message); return }
