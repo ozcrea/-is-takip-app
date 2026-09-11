@@ -1496,6 +1496,7 @@ async function renderBossDashboard(){
       <button class="refresh" id="empCatReportBtn">👤 Mitarbeiter Raporu</button>
       <button class="refresh" id="branchCatReportBtn">🏬 Şube Kategori Raporu</button>
       <button class="refresh" id="mtsProformaReportBtn">🧾 MTS Proforma</button>
+      <button class="refresh" id="privatkundenReportBtn">👤 Privatkunden Raporu</button>
       ${pushCardHtml}
       ${rangeHeaderHtml}
       <div class="card">
@@ -1607,6 +1608,7 @@ async function renderBossDashboard(){
     <button class="refresh" id="empCatReportBtn">👤 Mitarbeiter Raporu</button>
     <button class="refresh" id="branchCatReportBtn">🏬 Şube Kategori Raporu</button>
       <button class="refresh" id="mtsProformaReportBtn">🧾 MTS Proforma</button>
+      <button class="refresh" id="privatkundenReportBtn">👤 Privatkunden Raporu</button>
     ${pushCardHtml}
     ${rangeHeaderHtml}
     <div class="card">
@@ -1859,6 +1861,58 @@ async function renderMtsProformaReport(monthStr){
   document.getElementById('pdfBtn').addEventListener('click', ()=>window.print())
 }
 
+// ============ ŞEF PANELİ — PRİVATKUNDEN RAPORU ============
+// MTS Proforma ile aynı format/mantık — SADECE Privatkunden işleri
+// (ana paneldeki Privatkunden ayrımıyla AYNI kod: job_types.code ===
+// 'Privat'), tarih sırasına göre. TEK FARK: Mitarbeiter sütunu burada
+// yazdırmada da GİZLENMİYOR — kimin yaptığı bu raporda önemli.
+async function renderPrivatkundenReport(monthStr){
+  main.innerHTML = `<div class="empty">Lädt...</div>`
+  monthStr = monthStr || todayStr().slice(0,7)
+  const [y, m] = monthStr.split('-').map(Number)
+  const startDate = `${monthStr}-01`
+  const lastDay = new Date(y, m, 0).getDate()
+  const endDate = `${monthStr}-${String(lastDay).padStart(2,'0')}`
+
+  const { data } = await supabase.from('records').select('*, employees(name, akt_no), job_types(code, name, is_mts, is_variable_price, price_eur)').gte('created_at', startOfDayISO(startDate)).lt('created_at', endOfDayISO(endDate)).order('created_at', { ascending: true })
+  const records = (data || []).filter(r => r.job_types.code === 'Privat')
+  const total = records.reduce((sum, r) => sum + recordPrice(r), 0)
+
+  main.innerHTML = `
+    <button class="refresh" id="backToBossBtn">← Zurück</button>
+    <button class="refresh" id="pdfBtn">📄 Als PDF speichern</button>
+    <div class="card">
+      <label style="margin-top:0;">Monat wählen</label>
+      <input type="month" id="privatkundenMonthInput" value="${monthStr}">
+    </div>
+    <div class="card">
+      <label>${monthStr}</label>
+      ${records.length === 0 ? '<div class="empty">Keine Privatkunden-Aufträge in diesem Monat</div>' : `
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>Datum</th><th>Mitarbeiter</th><th>Bezeichnung</th><th>Nr.</th><th>Preis</th></tr></thead>
+            <tbody>
+              ${records.map(r => `
+                <tr>
+                  <td>${formatDateDE(localDateStr(r.created_at))}</td>
+                  <td>${r.employees.name}</td>
+                  <td>${jobDisplayLabel(r)}</td>
+                  <td>${r.ref_no || '-'}</td>
+                  <td>${fmtEur(recordPrice(r))}</td>
+                </tr>
+              `).join('')}
+            </tbody>
+          </table>
+        </div>
+        <div class="revenue-total" style="margin-top:14px;">${fmtEur(total)}</div>
+      `}
+    </div>
+  `
+  document.getElementById('backToBossBtn').addEventListener('click', renderBossDashboard)
+  document.getElementById('privatkundenMonthInput').addEventListener('change', (e)=>renderPrivatkundenReport(e.target.value))
+  document.getElementById('pdfBtn').addEventListener('click', ()=>window.print())
+}
+
 function wireBossControls(){
   document.getElementById('refreshBtn')?.addEventListener('click', renderBossDashboard)
   document.getElementById('enablePushBtn')?.addEventListener('click', enablePushNotifications)
@@ -1910,6 +1964,7 @@ function wireBossControls(){
   document.getElementById('empCatReportBtn')?.addEventListener('click', ()=>renderEmployeeCategoryReport())
   document.getElementById('branchCatReportBtn')?.addEventListener('click', ()=>renderBranchCategoryReport())
   document.getElementById('mtsProformaReportBtn')?.addEventListener('click', ()=>renderMtsProformaReport())
+  document.getElementById('privatkundenReportBtn')?.addEventListener('click', ()=>renderPrivatkundenReport())
 }
 
 // ============ ADMİN — GEÇMİŞE KAYIT EKLEME ============
