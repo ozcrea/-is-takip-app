@@ -1832,7 +1832,7 @@ async function renderMtsProformaReport(monthStr){
       <input type="month" id="mtsProformaMonthInput" value="${monthStr}">
     </div>
     <div class="card">
-      <label>MTS Proforma — ${monthStr}</label>
+      <label>${monthStr}</label>
       ${records.length === 0 ? '<div class="empty">Keine MTS-Aufträge in diesem Monat</div>' : `
         <div class="table-wrap">
           <table>
