@@ -201,6 +201,36 @@ const FOTOSERVICE_BRANCH_PRICE = { 'Ausschläger Weg': 9.88, 'Horn': 12.48, 'Wie
 // (owner o gün saatini girmemiş olsa bile) daha güvenilir.
 const OWNER_AKT_TO_BRANCH = Object.fromEntries(Object.entries(BRANCH_FOTOSERVICE_OWNER).map(([branch, akt]) => [akt, branch]))
 
+// dayBranchMap: employees.akt_no -> { work_date: branch } — daily_hours
+// satırlarından, GÜNE ÖZEL şube ataması için (bkz. resolveRecordBranch()).
+// Çok günlük bir Zeitraum'da bir çalışan farklı günlerde farklı şubede
+// çalışmış olabilir; tek bir "son işlenen" değeri kullanmak (eski
+// branchMap deseni) yanlış şubeye ciro yazdırabiliyordu.
+function buildDayBranchMap(hoursRows){
+  const map = {}
+  hoursRows.forEach(h=>{
+    const akt = h.employees.akt_no
+    if(!map[akt]) map[akt] = {}
+    map[akt][h.work_date] = h.branch
+  })
+  return map
+}
+
+// Bir kaydın hangi şubeye ait sayılacağını belirler. Fotoservice kayıtları
+// o günün daily_hours'una bakılmaksızın doğrudan sahibinin (A3A/W1S/H1A)
+// sabit şubesine yazılır — böylece owner o gün saatini girmemiş olsa bile
+// Foto geliri "unassigned"a düşmez. Diğer tüm kayıtlar, kaydı giren
+// çalışanın O GÜNKÜ (kaydın kendi tarihine göre) beyan ettiği şubeye
+// atanır. Şef panelindeki ana panel VE Şube Kategori Raporu AYNI bu
+// fonksiyonu kullanır — iki rapor aynı dönem için asla farklı şube
+// ciroları göstermez.
+function resolveRecordBranch(r, dayBranchMap){
+  if(r.job_types.code === 'FOTOSERVICE' && OWNER_AKT_TO_BRANCH[r.employees.akt_no]){
+    return OWNER_AKT_TO_BRANCH[r.employees.akt_no]
+  }
+  return dayBranchMap[r.employees.akt_no]?.[localDateStr(r.created_at)]
+}
+
 // job_types.category (schema_v24.sql) için görüntüleme sırası — listede
 // olmayan bir kategori en sona eklenir.
 const CATEGORY_DISPLAY_ORDER = ['GW', 'NW', 'SW', 'Foto', 'MTS', 'SR', 'Privat', 'Sonstiges']
@@ -1318,11 +1348,16 @@ async function renderBossDashboard(){
   `
 
   const hoursMap = {}
+  // branchMap: sadece "Zusammenfassung pro Mitarbeiter"da isim yanında
+  // gösterilen bilgi amaçlı şube etiketi için (bkz. summaryRowHtml) —
+  // asıl ciro/şube hesaplamaları artık güne-özel dayBranchMap üzerinden
+  // resolveRecordBranch() ile yapılıyor.
   const branchMap = {}
   hours.forEach(h => {
     hoursMap[h.employees.akt_no] = (hoursMap[h.employees.akt_no] || 0) + Number(h.hours)
     branchMap[h.employees.akt_no] = h.branch
   })
+  const dayBranchMap = buildDayBranchMap(hours)
 
   // declaredHoursOverride/branchOverride: "Zusammenfassung pro Mitarbeiter"da
   // bir çalışan seçiliyken kendi bağımsız Zeitraum'undan gelen değerler
@@ -1358,7 +1393,7 @@ async function renderBossDashboard(){
   const employeeFilter = bossRange.employeeFilter || ''
   let records = search ? allRecords.filter(r => (r.ref_no||'').toLowerCase().includes(search)) : allRecords
   if(branchFilter){
-    records = records.filter(r => branchMap[r.employees.akt_no] === branchFilter)
+    records = records.filter(r => resolveRecordBranch(r, dayBranchMap) === branchFilter)
   }
   // HATA DÜZELTMESİ: çalışan filtresi artık Zeitraum ile birlikte TÜM
   // rapor bölümlerine (toplamlar, şube dağılımı, tablo) uygulanıyor —
@@ -1484,7 +1519,7 @@ async function renderBossDashboard(){
   BRANCHES.forEach(b => branchRevenue[b] = 0)
   let unassigned = 0
   records.forEach(r=>{
-    const branch = branchMap[r.employees.akt_no]
+    const branch = resolveRecordBranch(r, dayBranchMap)
     if(branch && branchRevenue[branch] !== undefined){
       branchRevenue[branch] += recordPrice(r)
     } else {
@@ -1532,7 +1567,7 @@ async function renderBossDashboard(){
       if(r.job_types.is_mts) byDate[d].mts += price
       else if(r.job_types.code === 'Privat') byDate[d].privat += price
       else byDate[d].normal += price
-      const branch = branchMap[r.employees.akt_no]
+      const branch = resolveRecordBranch(r, dayBranchMap)
       if(branch && byDate[d].branch[branch] !== undefined) byDate[d].branch[branch] += price
     })
     const days = Object.keys(byDate).sort()
@@ -1718,12 +1753,10 @@ async function renderBranchCategoryReport(monthStr){
   const records = recordsRes.data || []
   const hoursRows = hoursRes.data || []
 
-  const dayBranchMap = {}
-  hoursRows.forEach(h=>{
-    const akt = h.employees.akt_no
-    if(!dayBranchMap[akt]) dayBranchMap[akt] = {}
-    dayBranchMap[akt][h.work_date] = h.branch
-  })
+  // Şube ataması artık ana panelle (renderBossDashboard) AYNI paylaşılan
+  // buildDayBranchMap()/resolveRecordBranch() fonksiyonlarını kullanıyor —
+  // iki rapor aynı dönem için asla farklı şube ciroları göstermez.
+  const dayBranchMap = buildDayBranchMap(hoursRows)
 
   const branchData = {}
   BRANCHES.forEach(b => branchData[b] = { revenue: 0, categories: {} })
@@ -1732,13 +1765,7 @@ async function renderBranchCategoryReport(monthStr){
   records.forEach(r=>{
     if(r.job_types.is_mts || r.job_types.code === 'Privat') return
     const cat = r.job_types.category || 'Sonstiges'
-    let branch
-    if(cat === 'Foto' && OWNER_AKT_TO_BRANCH[r.employees.akt_no]){
-      branch = OWNER_AKT_TO_BRANCH[r.employees.akt_no]
-    } else {
-      const d = localDateStr(r.created_at)
-      branch = dayBranchMap[r.employees.akt_no]?.[d]
-    }
+    const branch = resolveRecordBranch(r, dayBranchMap)
     if(!branch || !branchData[branch]){ unassignedCount += 1; return }
     branchData[branch].revenue += recordPrice(r)
     branchData[branch].categories[cat] = (branchData[branch].categories[cat] || 0) + 1
