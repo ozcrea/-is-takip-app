@@ -1,0 +1,127 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Kontakt — 2A1Z</title>
+<meta name="description" content="Kontaktieren Sie 2A1Z für eine Demo der Auftragsverwaltung oder für individuelle Softwareentwicklung, SaaS-Produkte und SEO.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,400..800&family=Manrope:wght@400;500;600;700;800&family=IBM+Plex+Mono:wght@400;500;600&display=swap">
+<link rel="stylesheet" href="assets/styles.css">
+</head>
+<body>
+
+<div class="progress" id="progress"></div>
+
+<header class="topbar">
+  <a class="brand" href="index.html">
+    <span class="wordmark">2<span class="one">A1</span>Z</span>
+    <small>Software für Betriebsabläufe</small>
+  </a>
+  <ul class="navlinks">
+    <li><a href="index.html#branchen">Branchen</a></li>
+    <li><a href="leistungen.html">Leistungen</a></li>
+    <li><a href="index.html#ueber-uns">Über uns</a></li>
+    <li><a href="kontakt.html">Kontakt</a></li>
+  </ul>
+  <div class="nav-right">
+    <a class="btn primary" href="kontakt.html">Demo anfragen</a>
+    <button class="menu-btn" id="menuBtn" aria-expanded="false" aria-label="Menü öffnen"><span></span></button>
+  </div>
+</header>
+
+<nav class="mobile-menu" id="mobileMenu">
+  <a href="index.html#branchen">Branchen</a>
+  <a href="leistungen.html">Leistungen</a>
+  <a href="index.html#ueber-uns">Über uns</a>
+  <a href="kontakt.html">Kontakt</a>
+  <a class="btn primary" href="kontakt.html" style="margin-top:8px;justify-content:center;">Demo anfragen</a>
+</nav>
+
+<!-- ============ PAGE HERO ============ -->
+<section class="page-hero" data-reveal data-hero>
+  <div class="ring"></div>
+  <div class="page-hero-inner">
+    <p class="eyebrow">Kontakt</p>
+    <h1 class="reveal-text heading">Lassen Sie uns über Ihren <em>Betrieb</em> sprechen.</h1>
+    <p class="sub reveal-text sub">Ob Demo der Auftragsverwaltung oder eigenes Softwareprojekt — schreiben Sie uns kurz, wir melden uns innerhalb von zwei Werktagen.</p>
+  </div>
+</section>
+
+<!-- ============ CONTACT FORM ============ -->
+<section class="block" data-reveal>
+  <div class="wrap">
+    <div class="contact-grid">
+      <div class="fade-up">
+        <form id="contactForm" novalidate>
+          <div class="row-2">
+            <div class="field">
+              <label for="name">Name</label>
+              <input type="text" id="name" name="name" required autocomplete="name">
+            </div>
+            <div class="field">
+              <label for="firma">Firma</label>
+              <input type="text" id="firma" name="firma" autocomplete="organization">
+            </div>
+          </div>
+          <div class="row-2">
+            <div class="field">
+              <label for="email">E-Mail</label>
+              <input type="email" id="email" name="email" required autocomplete="email">
+            </div>
+            <div class="field">
+              <label for="branche">Branche</label>
+              <select id="branche" name="branche">
+                <option value="hotel">Hotel</option>
+                <option value="pflege">Krankenpflege</option>
+                <option value="dienstleistung">Dienstleistung</option>
+                <option value="werkstatt">Autowerkstatt</option>
+                <option value="sonstiges">Sonstiges / eigenes Projekt</option>
+              </select>
+            </div>
+          </div>
+          <div class="field">
+            <label for="nachricht">Nachricht</label>
+            <textarea id="nachricht" name="nachricht" required placeholder="Erzählen Sie uns kurz von Ihrem Betrieb oder Projekt …"></textarea>
+          </div>
+          <button type="submit" class="btn primary">Nachricht senden →</button>
+          <p class="form-note">Mit dem Absenden stimmen Sie zu, dass wir Sie zu Ihrer Anfrage kontaktieren.</p>
+          <div class="confirm" id="formConfirm">Danke für Ihre Nachricht — wir melden uns innerhalb von zwei Werktagen.</div>
+        </form>
+      </div>
+
+      <div class="contact-info fade-up">
+        <div class="info-card">
+          <div class="lbl">E-Mail</div>
+          <div class="val">hallo@2a1z.de</div>
+          <p>Für allgemeine Anfragen und Demo-Terminwünsche.</p>
+        </div>
+        <div class="info-card">
+          <div class="lbl">Antwortzeit</div>
+          <div class="val">Innerhalb von 2 Werktagen</div>
+          <p>Wir melden uns persönlich mit einem konkreten Vorschlag statt einer automatischen Antwort.</p>
+        </div>
+        <div class="info-card">
+          <div class="lbl">Für bestehende autowerk.app Kunden</div>
+          <div class="val">Support über die App</div>
+          <p>Nutzen Sie für laufenden Support bitte die Kontaktfunktion direkt in autowerk.app.</p>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<footer>
+  <div class="wrap foot-grid">
+    <span>© 2A1Z — Software für Betriebsabläufe</span>
+    <span class="foot-nav">
+      <a href="index.html#branchen">Branchen</a>
+      <a href="leistungen.html">Leistungen</a>
+      <a href="kontakt.html">Kontakt</a>
+    </span>
+  </div>
+</footer>
+
+<script src="assets/script.js"></script>
+</body>
+</html>
