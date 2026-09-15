@@ -2432,9 +2432,25 @@ async function startApp(){
   }
 
   // Geçiş dönemi: auth_user_id henüz yoksa eski localStorage oturumuna bak.
+  // ÖNEMLİ: eğer bu çalışan zaten gerçek Auth'a taşınmışsa (auth_user_id
+  // dolu) ama yukarıdaki gerçek oturum kontrolü boş çıktıysa, bu çalışanın
+  // gerçek Supabase oturumu ÖLMÜŞ demektir (ör. telefonda Safari'nin
+  // localStorage'ı birkaç günde bir temizlemesi yüzünden Supabase'in kendi
+  // oturum anahtarı silinmiş, ama bu SESSION_KEY bayrağı hayatta kalmış
+  // olabilir). Bu durumda çalışanı SESSİZCE "giriş yapılmış" gibi
+  // göstermek YANLIŞ — arayüz normal görünür, kayıt ekleme bile çalışır
+  // (insert kuralı auth gerektirmiyor) ama silme sessizce RLS tarafından
+  // reddedilir (hem çalışan hem admin için — "Berechtigung" hatası). Bunun
+  // yerine gerçek girişe yönlendiriyoruz.
   const savedId = localStorage.getItem(SESSION_KEY)
   if(savedId){
     const emp = employees.find(e => e.id === savedId)
+    if(emp && emp.auth_user_id){
+      localStorage.removeItem(SESSION_KEY)
+      showToast('Sitzung abgelaufen — bitte erneut anmelden')
+      renderLandingScreen()
+      return
+    }
     if(emp){ currentEmployee = emp; updateLogoutBtn(); setChromeVisible(true); renderEmployeeDay(); return }
   }
   renderLandingScreen()
