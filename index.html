@@ -273,8 +273,13 @@ function showToast(msg){
   setTimeout(()=> t.remove(), 2500)
 }
 
+// DİKKAT: new Date().toISOString() UTC tarihini döndürür. Almanya her
+// zaman UTC'nin ilerisinde olduğundan (UTC+1/+2), yerel saat 00:00-01:59
+// arasındayken UTC hâlâ "dün" olabilir — bu da bugünün kaydını yanlışlıkla
+// bir önceki güne yazar/gösterir. localDateStr() yerel takvim gününü
+// doğrudan okur, bu sorunu yaşamaz.
 function todayStr(){
-  return new Date().toISOString().slice(0,10)
+  return localDateStr(new Date())
 }
 
 function startOfDayISO(dateStr){
@@ -1311,13 +1316,13 @@ function currentRangeDates(){
   if(bossRange.mode === 'today') return { start: today, end: today }
   if(bossRange.mode === 'yesterday'){
     const d = new Date(); d.setDate(d.getDate() - 1)
-    const s = d.toISOString().slice(0,10)
+    const s = localDateStr(d)
     return { start: s, end: s }
   }
   if(bossRange.mode === 'week'){
     const d = new Date(); const day = (d.getDay()+6)%7 // Montag=0
     const monday = new Date(d); monday.setDate(d.getDate()-day)
-    return { start: monday.toISOString().slice(0,10), end: today }
+    return { start: localDateStr(monday), end: today }
   }
   if(bossRange.mode === 'month'){
     const d = new Date()
@@ -1333,7 +1338,7 @@ function employeeSummaryRangeDates(mode){
   const today = todayStr()
   if(mode === 'yesterday'){
     const d = new Date(); d.setDate(d.getDate() - 1)
-    const s = d.toISOString().slice(0,10)
+    const s = localDateStr(d)
     return { start: s, end: s }
   }
   if(mode === 'month'){
@@ -1349,7 +1354,7 @@ function employeeSummaryRangeDates(mode){
   // 'week' (varsayılan)
   const d = new Date(); const day = (d.getDay()+6)%7
   const monday = new Date(d); monday.setDate(d.getDate()-day)
-  return { start: monday.toISOString().slice(0,10), end: today }
+  return { start: localDateStr(monday), end: today }
 }
 
 const EMPLOYEE_SUMMARY_RANGE_LABELS = { yesterday: 'Gestern', week: 'Diese Woche', month: 'Dieser Monat', lastMonth: 'Letzter Monat' }
@@ -1980,8 +1985,8 @@ function wireBossControls(){
       if(bossRange.mode === 'custom' && !bossRange.start){
         const end = new Date()
         const start = new Date(); start.setDate(end.getDate() - 6)
-        bossRange.start = start.toISOString().slice(0,10)
-        bossRange.end = end.toISOString().slice(0,10)
+        bossRange.start = localDateStr(start)
+        bossRange.end = localDateStr(end)
       }
       renderBossDashboard()
     })
@@ -2363,8 +2368,9 @@ function renderBkRecordEditForm(r){
       payload.custom_description = desc
       payload.custom_duration_minutes = parseInt(dur)
     }
-    const { error } = await supabase.from('records').update(payload).eq('id', r.id)
+    const { error, count } = await supabase.from('records').update(payload, { count: 'exact' }).eq('id', r.id)
     if(error){ showToast('Fehler: ' + error.message); return }
+    if(!count){ showToast('Fehler: Konnte nicht gespeichert werden — evtl. keine Berechtigung.'); return }
     showToast('Gespeichert')
     refreshBkDayRecords()
   })
