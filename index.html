@@ -842,6 +842,9 @@ function routeAfterLogin(emp){
   // renderEmployeeDay'deki isHiddenAdmin). is_chef_viewer: SADECE
   // görüntüleme — Chef-Panel'e girer ama isHiddenAdmin şartı is_admin
   // gerektirdiği için admin paneli bu hesaba hiçbir zaman görünmez.
+  // Chef sadece görüntüleme yetkili — kendi saat/şube/Auftrag girişi
+  // ANLAMSIZ, "Mitarbeiter" sekmesi bu hesaba hiç gösterilmemeli.
+  tabEmployee.style.display = emp.is_chef_viewer ? 'none' : ''
   if(emp.is_admin || emp.is_chef_viewer){
     bossUnlocked = true
     tabBoss.classList.add('active'); tabEmployee.classList.remove('active')
@@ -945,12 +948,23 @@ logoutBtn.addEventListener('click', async ()=>{
   bossUnlocked = false
   localStorage.removeItem(SESSION_KEY)
   updateLogoutBtn()
+  tabEmployee.style.display = ''
   renderLandingScreen()
 })
 
 // ============ ÇALIŞAN GİRİŞİ (TAGESANSICHT) ============
 
 async function renderEmployeeDay(){
+  // Savunma amaçlı ikinci katman: Chef (is_chef_viewer=true) hiçbir
+  // koşulda kendi saat/şube/Auftrag girişi görmemeli — "Mitarbeiter"
+  // sekmesi zaten bu hesap için gizli (bkz. routeAfterLogin), ama buraya
+  // başka bir yoldan gelinirse yine de Boss Dashboard'a yönlendir.
+  if(currentEmployee?.is_chef_viewer){
+    tabBoss.classList.add('active'); tabEmployee.classList.remove('active')
+    headerTitle.textContent = 'Chef'
+    renderBossDashboard()
+    return
+  }
   main.innerHTML = `<div class="empty">Lädt...</div>`
 
   const today = todayStr()
