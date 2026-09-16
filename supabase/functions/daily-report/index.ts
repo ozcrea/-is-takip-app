@@ -6,13 +6,16 @@
 // 17:30 civarında olup olmadığını kontrol eder; değilse hiçbir şey yapmadan
 // çıkar. Yani iki tetiklemeden sadece biri gerçekten bildirim gönderir.
 //
-// Not: Bu bildirim BİLEREK sadece Gesamtumsatz (toplam ciro) gösteriyor.
-// Önceden şube bazlı kırılım da vardı, ama şube ataması o günkü
-// daily_hours'a bağlı olduğu için (çalışan henüz saatini girmemişse veya
-// Fotoservice gibi sabit-şube atamaları için) şef panelindeki gerçek
-// zamanlı rakamlarla tutarsız kalabiliyordu. Detaylı/şube bazlı rapor
-// için şef panelindeki "Zusammenfassung pro Mitarbeiter" ve "Tägliche
-// Aufschlüsselung" kullanılmalı — onlar canlı veriden hesaplanıyor.
+// KRİTİK HATA DÜZELTMESİ (bu sürüm): önceki sürüm Supabase sorgularının
+// SADECE `data` alanını okuyup `error`'u tamamen görmezden geliyordu. Bir
+// sorgu (ör. geçici bir DB hatası, yanlış yapılandırılmış bir secret,
+// join/embed hatası) başarısız olursa `data` undefined olur, `?? []` ile
+// SESSİZCE boş diziye düşer ve bildirim "her şey €0,00" gibi görünür —
+// gerçek bir hata olduğu HİÇBİR yerde görünmez. Bu sürüm artık her
+// sorgunun `error`'unu kontrol ediyor; biri hata verirse sahte bir "€0,00"
+// raporu göndermek yerine açık bir hata bildirimi gönderiyor VE hatayı
+// JSON yanıtına (Supabase Dashboard > Edge Functions > Logs'ta görünür)
+// yazıyor.
 //
 // Gerekli secret'lar (Supabase Dashboard > Edge Functions > Secrets'tan
 // elle eklenmeli — SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY zaten otomatik
@@ -29,6 +32,16 @@ const VAPID_PUBLIC_KEY = Deno.env.get("VAPID_PUBLIC_KEY")!
 const VAPID_PRIVATE_KEY = Deno.env.get("VAPID_PRIVATE_KEY")!
 
 const REGIESTUNDE_RATE = 33.28
+const BRANCHES = ["Ausschläger Weg", "Horn", "Wiesendamm"]
+// index.html'deki BRANCH_FOTOSERVICE_OWNER'ın tersi — A3A/W1S/H1A o gün
+// kendi daily_hours'unu (branch) girmemiş olsa bile, bu hesaplar zaten
+// SABİT olarak bir şubeye bağlı, o yüzden şubeleri her zaman bilinir.
+// Bu harita güncellenirse index.html'dekiyle senkron tutulmalı.
+const FIXED_BRANCH_BY_AKT: Record<string, string> = {
+  "A3A": "Ausschläger Weg",
+  "W1S": "Wiesendamm",
+  "H1A": "Horn",
+}
 
 function getBerlinParts(date: Date) {
   const fmt = new Intl.DateTimeFormat("en-CA", {
@@ -56,6 +69,31 @@ function fmtEur(n: number) {
   return "€" + n.toLocaleString("de-DE", { minimumFractionDigits: 2, maximumFractionDigits: 2 })
 }
 
+async function sendToAllSubscriptions(
+  supabase: ReturnType<typeof createClient>,
+  title: string,
+  body: string,
+) {
+  const { data: subs } = await supabase.from("push_subscriptions").select("*")
+  webpush.setVapidDetails("mailto:kontakt@autowerk.app", VAPID_PUBLIC_KEY, VAPID_PRIVATE_KEY)
+  const payload = JSON.stringify({ title, body })
+  return Promise.allSettled(
+    (subs ?? []).map(async (sub: any) => {
+      try {
+        await webpush.sendNotification(
+          { endpoint: sub.endpoint, keys: { p256dh: sub.p256dh, auth: sub.auth } },
+          payload,
+        )
+      } catch (err: any) {
+        if (err?.statusCode === 404 || err?.statusCode === 410) {
+          await supabase.from("push_subscriptions").delete().eq("endpoint", sub.endpoint)
+        }
+        throw err
+      }
+    }),
+  )
+}
+
 Deno.serve(async () => {
   const now = new Date()
   const berlin = getBerlinParts(now)
@@ -76,47 +114,79 @@ Deno.serve(async () => {
   const startISO = new Date(berlinMidnightUTC(todayStr)).toISOString()
   const endISO = new Date(berlinMidnightUTC(todayStr) + 86400000).toISOString()
 
-  const { data: records } = await supabase.from("records")
-    .select("*, job_types(is_variable_price, price_eur)")
-    .gte("created_at", startISO).lt("created_at", endISO)
+  const [recordsRes, hoursRes] = await Promise.all([
+    supabase.from("records")
+      .select("*, employees(akt_no), job_types(code, is_mts, is_variable_price, price_eur)")
+      .gte("created_at", startISO).lt("created_at", endISO),
+    supabase.from("daily_hours")
+      .select("branch, employees(akt_no)")
+      .eq("work_date", todayStr),
+  ])
 
-  let total = 0
+  // Sorgulardan biri hata verdiyse SESSİZCE €0,00 raporu göndermek yerine
+  // açık bir hata bildirimi gönder — aksi halde gerçek bir DB/config
+  // hatası, "bugün hiç iş yapılmamış" ile ayırt edilemez hale gelir.
+  if (recordsRes.error || hoursRes.error) {
+    const errMsg = [recordsRes.error?.message, hoursRes.error?.message]
+      .filter(Boolean).join(" / ")
+    await sendToAllSubscriptions(
+      supabase,
+      `Tagesabschluss ${todayStr} — FEHLER`,
+      `Bericht konnte nicht erstellt werden: ${errMsg}`,
+    )
+    return new Response(
+      JSON.stringify({ error: errMsg, recordsError: recordsRes.error, hoursError: hoursRes.error }),
+      { status: 500, headers: { "Content-Type": "application/json" } },
+    )
+  }
+
+  const records = recordsRes.data
+  const hours = hoursRes.data
+
+  const branchMap: Record<string, string> = {}
+  for (const h of hours ?? []) {
+    branchMap[(h as any).employees.akt_no] = (h as any).branch
+  }
+
+  let normal = 0, mts = 0, privat = 0, unassigned = 0
+  const branchRevenue: Record<string, number> = {}
+  BRANCHES.forEach((b) => { branchRevenue[b] = 0 })
+
   for (const r of (records ?? []) as any[]) {
     const base = r.job_types.is_variable_price ? (r.custom_price || 0) : (r.job_types.price_eur || 0)
     // extra_arbeit_price: Extra Arbeit ile eklenen ek hizmetlerin fiyatı,
     // Regiestunde gibi ana kayda toplanıyor — bkz. index.html insertJobRecord().
-    total += base + (r.regiestunde || 0) * REGIESTUNDE_RATE + (r.extra_arbeit_price || 0)
+    const price = base + (r.regiestunde || 0) * REGIESTUNDE_RATE + (r.extra_arbeit_price || 0)
+    if (r.job_types.is_mts) mts += price
+    else if (r.job_types.code === "Privat") privat += price
+    else normal += price
+    // Önce o günkü daily_hours'a bakılır; yoksa (örn. Fotoservice'in
+    // otomatik atandığı A3A/W1S/H1A o gün kendi saatini girmemişse) sabit
+    // şube eşlemesine düşülür. İkisi de yoksa "Nicht zugeordnet"a düşer —
+    // Gesamtumsatz ile şube toplamlarının HER ZAMAN eşleşmesini sağlar.
+    const branch = branchMap[r.employees.akt_no] || FIXED_BRANCH_BY_AKT[r.employees.akt_no]
+    if (branch && branchRevenue[branch] !== undefined) branchRevenue[branch] += price
+    else unassigned += price
   }
 
-  const bodyLines = [`Gesamtumsatz: ${fmtEur(total)}`]
+  const total = normal + mts + privat
 
-  const { data: subs } = await supabase.from("push_subscriptions").select("*")
+  const bodyLines = [
+    `Gesamtumsatz: ${fmtEur(total)}`,
+    ...BRANCHES.map((b) => `${b}: ${fmtEur(branchRevenue[b])}`),
+  ]
+  if (unassigned > 0.001) {
+    bodyLines.push(`Nicht zugeordnet (keine Filiale erfasst): ${fmtEur(unassigned)}`)
+  }
 
-  webpush.setVapidDetails("mailto:kontakt@autowerk.app", VAPID_PUBLIC_KEY, VAPID_PRIVATE_KEY)
-
-  const payload = JSON.stringify({
-    title: `Tagesabschluss ${todayStr}`,
-    body: bodyLines.join("\n"),
-  })
-
-  const results = await Promise.allSettled(
-    (subs ?? []).map(async (sub: any) => {
-      try {
-        await webpush.sendNotification(
-          { endpoint: sub.endpoint, keys: { p256dh: sub.p256dh, auth: sub.auth } },
-          payload,
-        )
-      } catch (err: any) {
-        if (err?.statusCode === 404 || err?.statusCode === 410) {
-          await supabase.from("push_subscriptions").delete().eq("endpoint", sub.endpoint)
-        }
-        throw err
-      }
-    }),
+  const results = await sendToAllSubscriptions(
+    supabase,
+    `Tagesabschluss ${todayStr}`,
+    bodyLines.join("\n"),
   )
 
   return new Response(
-    JSON.stringify({ sent: results.length, todayStr, total }),
+    JSON.stringify({ sent: results.length, todayStr, total, branchRevenue, unassigned }),
     { headers: { "Content-Type": "application/json" } },
   )
 })
