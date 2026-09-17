@@ -18,16 +18,42 @@
 // yazıyor.
 //
 // Gerekli secret'lar (Supabase Dashboard > Edge Functions > Secrets'tan
-// elle eklenmeli — SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY zaten otomatik
-// tanımlıdır, bunları eklemenize gerek yok):
+// elle eklenmeli — SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY(veya yeni
+// SUPABASE_SECRET_KEYS) zaten otomatik tanımlıdır, bunları eklemenize
+// gerek yok):
 //   VAPID_PUBLIC_KEY
 //   VAPID_PRIVATE_KEY
+//
+// NOT (17.09.2026): "JWT issued at future" hatası görüldü — Supabase
+// panelinde SUPABASE_SERVICE_ROLE_KEY artık "Deprecated" işaretli, yerine
+// yeni JWT Signing Keys sistemi (SUPABASE_SECRET_KEYS) öneriliyor. Hata
+// ~5 dakika içinde kendiliğinden düzeliyor — bu, anahtar ROTASYONU
+// sırasında kısa süreli bir clock-skew/propagation penceresine işaret
+// ediyor (kalıcı bir yanlış yapılandırma değil). Aşağıdaki kod artık
+// mevcutsa YENİ anahtarı (düz metin veya JSON dizi olabilir) tercih
+// ediyor, yoksa eski değişkene düşüyor; ayrıca bu spesifik hata için
+// birkaç kez otomatik yeniden deniyor (bkz. fetchReportDataWithRetry).
 
 import { createClient } from "npm:@supabase/supabase-js@2"
 import webpush from "npm:web-push@3.6.7"
 
+function resolveServiceKey(): string {
+  const raw = Deno.env.get("SUPABASE_SECRET_KEYS") ?? Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")
+  if (!raw) throw new Error("SUPABASE_SECRET_KEYS veya SUPABASE_SERVICE_ROLE_KEY bulunamadı")
+  const trimmed = raw.trim()
+  if (trimmed.startsWith("[")) {
+    try {
+      const arr = JSON.parse(trimmed)
+      if (Array.isArray(arr) && arr.length > 0) return String(arr[0])
+    } catch {
+      // JSON değilse düz metin olarak devam et.
+    }
+  }
+  return trimmed
+}
+
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!
-const SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!
+const SERVICE_ROLE_KEY = resolveServiceKey()
 const VAPID_PUBLIC_KEY = Deno.env.get("VAPID_PUBLIC_KEY")!
 const VAPID_PRIVATE_KEY = Deno.env.get("VAPID_PRIVATE_KEY")!
 
@@ -67,6 +93,44 @@ function berlinMidnightUTC(dateStr: string) {
 
 function fmtEur(n: number) {
   return "€" + n.toLocaleString("de-DE", { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+}
+
+function sleep(ms: number) {
+  return new Promise((resolve) => setTimeout(resolve, ms))
+}
+
+// "JWT issued at future" gibi geçici anahtar-rotasyonu hatalarında birkaç
+// kez yeniden dener (toplam ~45 saniye) — gözlemlenen ~5 dakikalık
+// kendiliğinden-düzelme penceresinin tamamını garanti edemez ama Edge
+// Function'ın çalışma süresi sınırları içinde makul bir ilk savunma
+// katmanı. Başka türden bir hata (ör. gerçek bir yetki sorunu) ise hemen
+// çıkar, gereksiz yere beklemez.
+async function fetchReportDataWithRetry(
+  supabase: ReturnType<typeof createClient>,
+  startISO: string,
+  endISO: string,
+  todayStr: string,
+  maxAttempts = 3,
+  delayMs = 15000,
+) {
+  let recordsRes: any, hoursRes: any
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    ;[recordsRes, hoursRes] = await Promise.all([
+      supabase.from("records")
+        .select("*, employees(akt_no), job_types(code, is_mts, is_variable_price, price_eur)")
+        .gte("created_at", startISO).lt("created_at", endISO),
+      supabase.from("daily_hours")
+        .select("branch, employees(akt_no)")
+        .eq("work_date", todayStr),
+    ])
+    const err = recordsRes.error || hoursRes.error
+    if (!err) return { recordsRes, hoursRes, attempts: attempt }
+    const msg = (err.message || "").toLowerCase()
+    const isTransientJwtIssue = msg.includes("jwt")
+    if (!isTransientJwtIssue || attempt === maxAttempts) return { recordsRes, hoursRes, attempts: attempt }
+    await sleep(delayMs)
+  }
+  return { recordsRes, hoursRes, attempts: maxAttempts }
 }
 
 async function sendToAllSubscriptions(
@@ -114,28 +178,22 @@ Deno.serve(async () => {
   const startISO = new Date(berlinMidnightUTC(todayStr)).toISOString()
   const endISO = new Date(berlinMidnightUTC(todayStr) + 86400000).toISOString()
 
-  const [recordsRes, hoursRes] = await Promise.all([
-    supabase.from("records")
-      .select("*, employees(akt_no), job_types(code, is_mts, is_variable_price, price_eur)")
-      .gte("created_at", startISO).lt("created_at", endISO),
-    supabase.from("daily_hours")
-      .select("branch, employees(akt_no)")
-      .eq("work_date", todayStr),
-  ])
+  const { recordsRes, hoursRes, attempts } = await fetchReportDataWithRetry(supabase, startISO, endISO, todayStr)
 
-  // Sorgulardan biri hata verdiyse SESSİZCE €0,00 raporu göndermek yerine
-  // açık bir hata bildirimi gönder — aksi halde gerçek bir DB/config
-  // hatası, "bugün hiç iş yapılmamış" ile ayırt edilemez hale gelir.
+  // Sorgulardan biri hata verdiyse (yeniden denemelerden sonra bile)
+  // SESSİZCE €0,00 raporu göndermek yerine açık bir hata bildirimi gönder
+  // — aksi halde gerçek bir DB/config hatası, "bugün hiç iş yapılmamış"
+  // ile ayırt edilemez hale gelir.
   if (recordsRes.error || hoursRes.error) {
     const errMsg = [recordsRes.error?.message, hoursRes.error?.message]
       .filter(Boolean).join(" / ")
     await sendToAllSubscriptions(
       supabase,
       `Tagesabschluss ${todayStr} — FEHLER`,
-      `Bericht konnte nicht erstellt werden: ${errMsg}`,
+      `Bericht konnte nicht erstellt werden (${attempts} Versuch(e)): ${errMsg}`,
     )
     return new Response(
-      JSON.stringify({ error: errMsg, recordsError: recordsRes.error, hoursError: hoursRes.error }),
+      JSON.stringify({ error: errMsg, attempts, recordsError: recordsRes.error, hoursError: hoursRes.error }),
       { status: 500, headers: { "Content-Type": "application/json" } },
     )
   }
