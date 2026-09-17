@@ -43,19 +43,59 @@
 import { createClient } from "npm:@supabase/supabase-js@2"
 import webpush from "npm:web-push@3.6.7"
 
+// TANI AMAÇLI: hangi env var'ın bulunduğunu, JSON dizi mi düz metin mi
+// olduğunu ve çözümlenen anahtarın SADECE ilk birkaç karakterini/uzunluğunu
+// kaydeder — gerçek secret DEĞERİ hiçbir zaman loglanmaz/döndürülmez, sadece
+// bu güvenli özet bilgisi, Supabase panelindeki değerle karşılaştırma
+// yapabilmek için her yanıta ekleniyor (bkz. Deno.serve içindeki kullanım).
+let keyDiagnostics: {
+  source: "SUPABASE_SECRET_KEYS" | "SUPABASE_SERVICE_ROLE_KEY" | "none"
+  wasJsonArray: boolean
+  arrayElementType: string | null
+  resolvedPrefix: string
+  resolvedLength: number
+} = { source: "none", wasJsonArray: false, arrayElementType: null, resolvedPrefix: "", resolvedLength: 0 }
+
 function resolveServiceKey(): string {
-  const raw = Deno.env.get("SUPABASE_SECRET_KEYS") ?? Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")
-  if (!raw) throw new Error("SUPABASE_SECRET_KEYS veya SUPABASE_SERVICE_ROLE_KEY bulunamadı")
+  const secretKeys = Deno.env.get("SUPABASE_SECRET_KEYS")
+  const legacyKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")
+  const raw = secretKeys ?? legacyKey
+  const source: typeof keyDiagnostics.source = secretKeys ? "SUPABASE_SECRET_KEYS" : (legacyKey ? "SUPABASE_SERVICE_ROLE_KEY" : "none")
+  if (!raw) {
+    keyDiagnostics = { source, wasJsonArray: false, arrayElementType: null, resolvedPrefix: "", resolvedLength: 0 }
+    throw new Error("SUPABASE_SECRET_KEYS veya SUPABASE_SERVICE_ROLE_KEY bulunamadı")
+  }
   const trimmed = raw.trim()
+  let resolved = trimmed
+  let wasArray = false
+  let arrayElementType: string | null = null
   if (trimmed.startsWith("[")) {
     try {
       const arr = JSON.parse(trimmed)
-      if (Array.isArray(arr) && arr.length > 0) return String(arr[0])
+      if (Array.isArray(arr) && arr.length > 0) {
+        wasArray = true
+        const first = arr[0]
+        arrayElementType = typeof first
+        // Dizi elemanları düz metin string olabilir, veya {api_key:...} /
+        // {key:...} gibi bir obje olabilir — ikisini de dene, olmazsa
+        // JSON.stringify ile en azından çökmeden devam et (yanlış ama
+        // teşhis edilebilir bir sonuç verir).
+        resolved = typeof first === "string"
+          ? first
+          : (first?.api_key ?? first?.key ?? first?.secret ?? JSON.stringify(first))
+      }
     } catch {
       // JSON değilse düz metin olarak devam et.
     }
   }
-  return trimmed
+  keyDiagnostics = {
+    source,
+    wasJsonArray: wasArray,
+    arrayElementType,
+    resolvedPrefix: resolved.slice(0, 12),
+    resolvedLength: resolved.length,
+  }
+  return resolved
 }
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!
@@ -172,9 +212,12 @@ Deno.serve(async () => {
   const minutesSince1745 = (hour * 60 + minute) - (17 * 60 + 45)
 
   // Sadece 17:40–17:54 Berlin saati penceresinde gerçekten gönder.
+  // keyDiagnostics buraya da eklendi: böylece pencere dışında elle
+  // "Invoke" edilse bile (ör. TANI amaçlı), hangi anahtarın okunduğu
+  // görülebilir — gerçek gönderimi beklemeye gerek kalmaz.
   if (minutesSince1745 < -5 || minutesSince1745 > 9) {
     return new Response(
-      JSON.stringify({ skipped: true, berlinTime: `${berlin.hour}:${berlin.minute}` }),
+      JSON.stringify({ skipped: true, berlinTime: `${berlin.hour}:${berlin.minute}`, keyDiagnostics }),
       { headers: { "Content-Type": "application/json" } },
     )
   }
@@ -199,7 +242,7 @@ Deno.serve(async () => {
       `Bericht konnte nicht erstellt werden (${attempts} Versuch(e)): ${errMsg}`,
     )
     return new Response(
-      JSON.stringify({ error: errMsg, attempts, recordsError: recordsRes.error, hoursError: hoursRes.error }),
+      JSON.stringify({ error: errMsg, attempts, recordsError: recordsRes.error, hoursError: hoursRes.error, keyDiagnostics }),
       { status: 500, headers: { "Content-Type": "application/json" } },
     )
   }
@@ -250,7 +293,7 @@ Deno.serve(async () => {
   )
 
   return new Response(
-    JSON.stringify({ sent: results.length, todayStr, total, branchRevenue, unassigned }),
+    JSON.stringify({ sent: results.length, todayStr, total, branchRevenue, unassigned, keyDiagnostics }),
     { headers: { "Content-Type": "application/json" } },
   )
 })
