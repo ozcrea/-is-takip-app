@@ -1,10 +1,16 @@
 // Atölye İş Takip — Otomatik Gün Sonu Bildirimi (Web Push)
 //
-// Bu fonksiyon pg_cron tarafından günde iki kez tetiklenir (15:30 ve 16:30 UTC —
-// bkz. schema_v9.sql). Almanya'nın yaz/kış saati (CEST/CET) arasında elle
-// ayarlama gerekmesin diye, fonksiyon kendi içinde gerçek Berlin saatinin
-// 17:30 civarında olup olmadığını kontrol eder; değilse hiçbir şey yapmadan
-// çıkar. Yani iki tetiklemeden sadece biri gerçekten bildirim gönderir.
+// Bu fonksiyon pg_cron tarafından günde iki kez tetiklenir (15:45 ve 16:45 UTC —
+// bkz. schema_v34.sql, eski 15:30/16:30'u değiştirdi). Almanya'nın yaz/kış
+// saati (CEST/CET) arasında elle ayarlama gerekmesin diye, fonksiyon kendi
+// içinde gerçek Berlin saatinin 17:45 civarında olup olmadığını kontrol
+// eder; değilse hiçbir şey yapmadan çıkar. Yani iki tetiklemeden sadece
+// biri gerçekten bildirim gönderir.
+//
+// NOT: bu pencere schema_v34.sql'deki cron saatleriyle BİRLİKTE
+// değiştirilmeli — sadece biri güncellenirse (cron yeni saatte tetikler
+// ama fonksiyon eski pencereyi beklerse, veya tam tersi) bildirim hiç
+// gitmez, sessizce "skipped" döner.
 //
 // KRİTİK HATA DÜZELTMESİ (bu sürüm): önceki sürüm Supabase sorgularının
 // SADECE `data` alanını okuyup `error`'u tamamen görmezden geliyordu. Bir
@@ -163,10 +169,10 @@ Deno.serve(async () => {
   const berlin = getBerlinParts(now)
   const hour = parseInt(berlin.hour)
   const minute = parseInt(berlin.minute)
-  const minutesSince1730 = (hour * 60 + minute) - (17 * 60 + 30)
+  const minutesSince1745 = (hour * 60 + minute) - (17 * 60 + 45)
 
-  // Sadece 17:25–17:39 Berlin saati penceresinde gerçekten gönder.
-  if (minutesSince1730 < -5 || minutesSince1730 > 9) {
+  // Sadece 17:40–17:54 Berlin saati penceresinde gerçekten gönder.
+  if (minutesSince1745 < -5 || minutesSince1745 > 9) {
     return new Response(
       JSON.stringify({ skipped: true, berlinTime: `${berlin.hour}:${berlin.minute}` }),
       { headers: { "Content-Type": "application/json" } },
