@@ -43,18 +43,23 @@
 import { createClient } from "npm:@supabase/supabase-js@2"
 import webpush from "npm:web-push@3.6.7"
 
-// TANI AMAÇLI: hangi env var'ın bulunduğunu, JSON dizi mi düz metin mi
+// TANI AMAÇLI: hangi env var'ın bulunduğunu, JSON obje/dizi mi düz metin mi
 // olduğunu ve çözümlenen anahtarın SADECE ilk birkaç karakterini/uzunluğunu
 // kaydeder — gerçek secret DEĞERİ hiçbir zaman loglanmaz/döndürülmez, sadece
 // bu güvenli özet bilgisi, Supabase panelindeki değerle karşılaştırma
 // yapabilmek için her yanıta ekleniyor (bkz. Deno.serve içindeki kullanım).
+//
+// GERÇEK ŞEKİL (doğrulandı, 19.09.2026): SUPABASE_SECRET_KEYS bir dizi
+// DEĞİL, tek bir JSON OBJESİ — { "default": "<gerçek anahtar>" } — muhtemelen
+// birden fazla adlandırılmış anahtarı (rotasyon için) destekleyen bir yapı,
+// "default" o an aktif olanı gösteriyor.
 let keyDiagnostics: {
   source: "SUPABASE_SECRET_KEYS" | "SUPABASE_SERVICE_ROLE_KEY" | "none"
-  wasJsonArray: boolean
-  arrayElementType: string | null
+  shape: "string" | "array" | "object" | "unknown"
+  objectKeys: string[] | null
   resolvedPrefix: string
   resolvedLength: number
-} = { source: "none", wasJsonArray: false, arrayElementType: null, resolvedPrefix: "", resolvedLength: 0 }
+} = { source: "none", shape: "unknown", objectKeys: null, resolvedPrefix: "", resolvedLength: 0 }
 
 function resolveServiceKey(): string {
   const secretKeys = Deno.env.get("SUPABASE_SECRET_KEYS")
@@ -62,36 +67,43 @@ function resolveServiceKey(): string {
   const raw = secretKeys ?? legacyKey
   const source: typeof keyDiagnostics.source = secretKeys ? "SUPABASE_SECRET_KEYS" : (legacyKey ? "SUPABASE_SERVICE_ROLE_KEY" : "none")
   if (!raw) {
-    keyDiagnostics = { source, wasJsonArray: false, arrayElementType: null, resolvedPrefix: "", resolvedLength: 0 }
+    keyDiagnostics = { source, shape: "unknown", objectKeys: null, resolvedPrefix: "", resolvedLength: 0 }
     throw new Error("SUPABASE_SECRET_KEYS veya SUPABASE_SERVICE_ROLE_KEY bulunamadı")
   }
   const trimmed = raw.trim()
   let resolved = trimmed
-  let wasArray = false
-  let arrayElementType: string | null = null
+  let shape: typeof keyDiagnostics.shape = "string"
+  let objectKeys: string[] | null = null
+
   if (trimmed.startsWith("[")) {
+    shape = "array"
     try {
       const arr = JSON.parse(trimmed)
       if (Array.isArray(arr) && arr.length > 0) {
-        wasArray = true
         const first = arr[0]
-        arrayElementType = typeof first
-        // Dizi elemanları düz metin string olabilir, veya {api_key:...} /
-        // {key:...} gibi bir obje olabilir — ikisini de dene, olmazsa
-        // JSON.stringify ile en azından çökmeden devam et (yanlış ama
-        // teşhis edilebilir bir sonuç verir).
         resolved = typeof first === "string"
           ? first
-          : (first?.api_key ?? first?.key ?? first?.secret ?? JSON.stringify(first))
+          : (first?.default ?? first?.api_key ?? first?.key ?? first?.secret ?? JSON.stringify(first))
       }
-    } catch {
-      // JSON değilse düz metin olarak devam et.
-    }
+    } catch { /* JSON değilse düz metin olarak devam et */ }
+  } else if (trimmed.startsWith("{")) {
+    shape = "object"
+    try {
+      const obj = JSON.parse(trimmed)
+      objectKeys = Object.keys(obj)
+      // Doğrulanan gerçek şekil: { "default": "<anahtar>" }. Alan adı
+      // ileride değişirse (rotasyon/isimlendirme farkı), diğer olası
+      // adlarla ve son çare olarak ilk değerle devam et — hiçbiri
+      // uymazsa objectKeys ile teşhis edilebilir kalır.
+      resolved = obj?.default ?? obj?.api_key ?? obj?.key ?? obj?.secret ?? Object.values(obj)[0] ?? trimmed
+    } catch { /* JSON değilse düz metin olarak devam et */ }
   }
+
+  resolved = String(resolved)
   keyDiagnostics = {
     source,
-    wasJsonArray: wasArray,
-    arrayElementType,
+    shape,
+    objectKeys,
     resolvedPrefix: resolved.slice(0, 12),
     resolvedLength: resolved.length,
   }
