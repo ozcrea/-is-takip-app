@@ -292,6 +292,29 @@ function endOfDayISO(dateStr){
   return d.toISOString()
 }
 
+const SUPABASE_PAGE_SIZE = 1000
+
+// Supabase/PostgREST tek sorguda varsayılan olarak en fazla 1000 satır
+// döndürür. .order('created_at', {ascending:false}) ile çekilen geniş
+// tarih aralığı raporlarında (Dieser Monat, Zeitraum wählen, MTS/Privat-
+// kunden Raporu) toplam satır sayısı 1000'i geçince EN ESKİ kayıtlar
+// hatasız/sessizce düşüyor ve ciro tutarsız/eksik çıkıyor — bu, aralık
+// GENİŞLETİLDİĞİNDE toplamın küçülmesine bile yol açabiliyor. buildQuery
+// her çağrıda TAZE bir query builder döndürmeli (aynı builder ikinci kez
+// kullanılamaz); .range() ile sayfalayarak TÜM satırlar garanti edilir.
+async function fetchAllRows(buildQuery){
+  let all = []
+  let from = 0
+  while(true){
+    const { data, error } = await buildQuery().range(from, from + SUPABASE_PAGE_SIZE - 1)
+    if(error) return { data: null, error }
+    all = all.concat(data || [])
+    if(!data || data.length < SUPABASE_PAGE_SIZE) break
+    from += SUPABASE_PAGE_SIZE
+  }
+  return { data: all, error: null }
+}
+
 function fmtEur(n){
   return '€' + (n||0).toLocaleString('de-DE', { minimumFractionDigits:2, maximumFractionDigits:2 })
 }
@@ -1364,7 +1387,7 @@ async function renderBossDashboard(){
 
   const { start, end } = currentRangeDates()
   const [recordsRes, hoursRes, pushStatus] = await Promise.all([
-    supabase.from('records').select('*, employees(name, akt_no), job_types(code, name, duration_minutes, price_eur, is_mts, is_variable_price)').gte('created_at', startOfDayISO(start)).lt('created_at', endOfDayISO(end)).order('created_at', { ascending: false }),
+    fetchAllRows(() => supabase.from('records').select('*, employees(name, akt_no), job_types(code, name, duration_minutes, price_eur, is_mts, is_variable_price)').gte('created_at', startOfDayISO(start)).lt('created_at', endOfDayISO(end)).order('created_at', { ascending: false })),
     supabase.from('daily_hours').select('*, employees(name, akt_no)').gte('work_date', start).lte('work_date', end),
     getPushSubscriptionStatus()
   ])
@@ -1485,7 +1508,7 @@ async function renderBossDashboard(){
     const { start: eStart, end: eEnd } = employeeSummaryRangeDates(empReportMode)
     const emp = employees.find(e => e.akt_no === employeeFilter)
     const [eRecordsRes, eHoursRes] = await Promise.all([
-      supabase.from('records').select('*, employees(name, akt_no), job_types(code, name, duration_minutes, price_eur, is_mts, is_variable_price)').eq('employee_id', emp ? emp.id : '').gte('created_at', startOfDayISO(eStart)).lt('created_at', endOfDayISO(eEnd)),
+      fetchAllRows(() => supabase.from('records').select('*, employees(name, akt_no), job_types(code, name, duration_minutes, price_eur, is_mts, is_variable_price)').eq('employee_id', emp ? emp.id : '').gte('created_at', startOfDayISO(eStart)).lt('created_at', endOfDayISO(eEnd))),
       supabase.from('daily_hours').select('*').eq('employee_id', emp ? emp.id : '').gte('work_date', eStart).lte('work_date', eEnd)
     ])
     const eRecords = eRecordsRes.data || []
@@ -1763,7 +1786,7 @@ async function renderEmployeeCategoryReport(monthStr){
   const endDate = `${monthStr}-${String(lastDay).padStart(2,'0')}`
 
   const [recordsRes, hoursRes] = await Promise.all([
-    supabase.from('records').select('*, employees(name, akt_no), job_types(category)').gte('created_at', startOfDayISO(startDate)).lt('created_at', endOfDayISO(endDate)),
+    fetchAllRows(() => supabase.from('records').select('*, employees(name, akt_no), job_types(category)').gte('created_at', startOfDayISO(startDate)).lt('created_at', endOfDayISO(endDate))),
     supabase.from('daily_hours').select('*, employees(name, akt_no)').gte('work_date', startDate).lte('work_date', endDate)
   ])
   const records = recordsRes.data || []
@@ -1838,7 +1861,7 @@ async function renderBranchCategoryReport(monthStr){
   const endDate = `${monthStr}-${String(lastDay).padStart(2,'0')}`
 
   const [recordsRes, hoursRes] = await Promise.all([
-    supabase.from('records').select('*, employees(name, akt_no), job_types(category, is_mts, code, price_eur, is_variable_price)').gte('created_at', startOfDayISO(startDate)).lt('created_at', endOfDayISO(endDate)),
+    fetchAllRows(() => supabase.from('records').select('*, employees(name, akt_no), job_types(category, is_mts, code, price_eur, is_variable_price)').gte('created_at', startOfDayISO(startDate)).lt('created_at', endOfDayISO(endDate))),
     supabase.from('daily_hours').select('*, employees(name, akt_no)').gte('work_date', startDate).lte('work_date', endDate)
   ])
   const records = recordsRes.data || []
@@ -1909,7 +1932,7 @@ async function renderMtsProformaReport(monthStr){
   const lastDay = new Date(y, m, 0).getDate()
   const endDate = `${monthStr}-${String(lastDay).padStart(2,'0')}`
 
-  const { data } = await supabase.from('records').select('*, employees(name, akt_no), job_types(code, name, is_mts, is_variable_price, price_eur)').gte('created_at', startOfDayISO(startDate)).lt('created_at', endOfDayISO(endDate)).order('created_at', { ascending: true })
+  const { data } = await fetchAllRows(() => supabase.from('records').select('*, employees(name, akt_no), job_types(code, name, is_mts, is_variable_price, price_eur)').gte('created_at', startOfDayISO(startDate)).lt('created_at', endOfDayISO(endDate)).order('created_at', { ascending: true }))
   const records = (data || []).filter(r => r.job_types.is_mts)
   const total = records.reduce((sum, r) => sum + recordPrice(r), 0)
 
@@ -1961,7 +1984,7 @@ async function renderPrivatkundenReport(monthStr){
   const lastDay = new Date(y, m, 0).getDate()
   const endDate = `${monthStr}-${String(lastDay).padStart(2,'0')}`
 
-  const { data } = await supabase.from('records').select('*, employees(name, akt_no), job_types(code, name, is_mts, is_variable_price, price_eur)').gte('created_at', startOfDayISO(startDate)).lt('created_at', endOfDayISO(endDate)).order('created_at', { ascending: true })
+  const { data } = await fetchAllRows(() => supabase.from('records').select('*, employees(name, akt_no), job_types(code, name, is_mts, is_variable_price, price_eur)').gte('created_at', startOfDayISO(startDate)).lt('created_at', endOfDayISO(endDate)).order('created_at', { ascending: true }))
   const records = (data || []).filter(r => r.job_types.code === 'Privat')
   const total = records.reduce((sum, r) => sum + recordPrice(r), 0)
 
