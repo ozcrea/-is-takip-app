@@ -1571,13 +1571,23 @@ async function renderBossDashboard(){
     return
   }
 
-  let normalRevenue = 0, mtsRevenue = 0, privatRevenue = 0
+  // Lack/Delle: category='SR' işleri (SR-Lack/SR-Delle) — is_mts=false ve
+  // code!=='Privat' olduğu için zaten "normalRevenue" (APZ) kovasına
+  // dahiller; Aufbereitung = APZ − (Lack+Delle) ile bu kovanın geri kalanı
+  // hesaplanıyor. MTS-SR (category='MTS', is_mts=true) tamamen ayrı bir
+  // kovaya (mtsRevenue) düştüğü için burayla hiç karışmıyor.
+  let normalRevenue = 0, mtsRevenue = 0, privatRevenue = 0, lackRevenue = 0, delleRevenue = 0
   records.forEach(r=>{
     const price = recordPrice(r)
     if(r.job_types.is_mts) mtsRevenue += price
     else if(r.job_types.code === 'Privat') privatRevenue += price
-    else normalRevenue += price
+    else {
+      normalRevenue += price
+      if(r.job_types.code === 'SR-Lack') lackRevenue += price
+      else if(r.job_types.code === 'SR-Delle') delleRevenue += price
+    }
   })
+  const aufbereitungRevenue = normalRevenue - (lackRevenue + delleRevenue)
   const totalRevenue = normalRevenue + mtsRevenue + privatRevenue
 
   const branchRevenue = {}
@@ -1680,7 +1690,22 @@ async function renderBossDashboard(){
         <div class="revenue-box">
           <div class="amount">${fmtEur(normalRevenue)}</div>
           <div class="net">Netto (75%): ${fmtEur(normalRevenue * 0.75)}</div>
-          <div class="sub">Normal</div>
+          <div class="sub">APZ</div>
+        </div>
+        <div class="revenue-box">
+          <div class="amount">${fmtEur(lackRevenue)}</div>
+          <div class="net">Netto (75%): ${fmtEur(lackRevenue * 0.75)}</div>
+          <div class="sub">Lack</div>
+        </div>
+        <div class="revenue-box">
+          <div class="amount">${fmtEur(delleRevenue)}</div>
+          <div class="net">Netto (75%): ${fmtEur(delleRevenue * 0.75)}</div>
+          <div class="sub">Delle</div>
+        </div>
+        <div class="revenue-box">
+          <div class="amount">${fmtEur(aufbereitungRevenue)}</div>
+          <div class="net">Netto (75%): ${fmtEur(aufbereitungRevenue * 0.75)}</div>
+          <div class="sub">Aufbereitung</div>
         </div>
         <div class="revenue-box mts">
           <div class="amount">${fmtEur(mtsRevenue)}</div>
