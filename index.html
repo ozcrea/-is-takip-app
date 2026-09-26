@@ -479,6 +479,10 @@ function jobFormHtml(prefix, qtyCounts, knownBranch){
       <label>Wie viele Stunden?</label>
       <input type="number" id="${prefix}RegiestundeHoursInput" placeholder="z.B. 2.5" step="0.5" min="0.5">
     </div>
+    <div id="${prefix}RegiestundeNoteWrap" style="display:none;">
+      <label>Notiz (optional)</label>
+      <textarea id="${prefix}RegiestundeNoteInput" rows="2" placeholder="Wofür wurde die Zeit verwendet?"></textarea>
+    </div>
     <div id="${prefix}PerformerWrap" style="display:none;">
       <label>Wer hat die Arbeit ausgeführt?</label>
       <select id="${prefix}PerformerSelect">
@@ -510,6 +514,19 @@ function jobFormHtml(prefix, qtyCounts, knownBranch){
       <select id="${prefix}ExtraArbeit2Select">
         <option value="">Keine</option>
       </select>
+      <div id="${prefix}ExtraArbeit3Wrap" style="display:none;">
+        <label>Extra Arbeit 3 (optional)</label>
+        <select id="${prefix}ExtraArbeit3Select">
+          <option value="">Keine</option>
+        </select>
+      </div>
+      <div id="${prefix}ExtraArbeit4Wrap" style="display:none;">
+        <label>Extra Arbeit 4 (optional)</label>
+        <select id="${prefix}ExtraArbeit4Select">
+          <option value="">Keine</option>
+        </select>
+      </div>
+      <button type="button" class="secondary" id="${prefix}ExtraArbeitAddSlotBtn" style="margin-top:8px;">+ Weitere Extra Arbeit</button>
     </div>
     <button class="primary" id="${prefix}AddBtn" disabled>Auftrag hinzufügen</button>
   `
@@ -558,9 +575,8 @@ function validateJobForm(prefix, getSelected, extraValid){
       ok = ok && !!$('TextDescriptionInput').value.trim() && durVal && parseFloat(durVal) > 0
     }
     if(jt.allows_extra_arbeit){
-      const e1 = $('ExtraArbeit1Select').value
-      const e2 = $('ExtraArbeit2Select').value
-      if(e1 && e2 && e1 === e2) ok = false
+      const chosen = [$('ExtraArbeit1Select').value, $('ExtraArbeit2Select').value, $('ExtraArbeit3Select').value, $('ExtraArbeit4Select').value].filter(Boolean)
+      if(new Set(chosen).size !== chosen.length) ok = false
     }
   }
   $('AddBtn').disabled = !(ok && extraOk)
@@ -579,6 +595,7 @@ function wireJobForm(prefix, getSelected, setSelected, extraValid){
       $('QtyWrap').style.display = jt.is_quantity ? 'block' : 'none'
       $('RegiestundeWrap').style.display = jt.is_aufbereitung ? 'block' : 'none'
       $('RegiestundeHoursWrap').style.display = jt.code === 'Regiestunde' ? 'block' : 'none'
+      $('RegiestundeNoteWrap').style.display = jt.code === 'Regiestunde' ? 'block' : 'none'
       $('PriceWrap').style.display = (jt.is_variable_price && jt.code !== 'FOTOSERVICE') ? 'block' : 'none'
       $('PerformerWrap').style.display = jt.code === 'SR-Delle' ? 'block' : 'none'
       $('MtsTypeWrap').style.display = jt.code === 'MTS-SR' ? 'block' : 'none'
@@ -591,9 +608,19 @@ function wireJobForm(prefix, getSelected, setSelected, extraValid){
         const optsHtml = '<option value="">Keine</option>' + extraArbeitOptionsHtml(jt)
         $('ExtraArbeit1Select').innerHTML = optsHtml
         $('ExtraArbeit2Select').innerHTML = optsHtml
+        $('ExtraArbeit3Select').innerHTML = optsHtml
+        $('ExtraArbeit4Select').innerHTML = optsHtml
       }
+      // İş tipi her değiştiğinde 3./4. slot ve "+" butonu başlangıç durumuna
+      // döner — bir önceki seçimde açılmış kalmasın.
+      $('ExtraArbeit3Wrap').style.display = 'none'
+      $('ExtraArbeit4Wrap').style.display = 'none'
+      $('ExtraArbeit3Select').value = ''
+      $('ExtraArbeit4Select').value = ''
+      $('ExtraArbeitAddSlotBtn').style.display = 'inline-block'
+      $('ExtraArbeitAddSlotBtn').textContent = '+ Weitere Extra Arbeit'
       if(!jt.is_aufbereitung) $('Regiestunde').value = ''
-      if(jt.code !== 'Regiestunde') $('RegiestundeHoursInput').value = ''
+      if(jt.code !== 'Regiestunde'){ $('RegiestundeHoursInput').value = ''; $('RegiestundeNoteInput').value = '' }
       if(jt.code !== 'SR-Delle') $('PerformerSelect').value = ''
       if(jt.code !== 'MTS-SR') $('MtsTypeSelect').value = ''
       if(jt.code !== 'Showroom Pflege') $('ShowroomHoursSelect').value = ''
@@ -607,8 +634,16 @@ function wireJobForm(prefix, getSelected, setSelected, extraValid){
   ;['RefNo','QtyInput','CustomPrice','RegiestundeHoursInput','TextDescriptionInput','TextDurationInput'].forEach(id=>{
     $(id).addEventListener('input', ()=>validateJobForm(prefix, getSelected, extraValid))
   })
-  ;['PerformerSelect','MtsTypeSelect','ShowroomHoursSelect','ExtraArbeit1Select','ExtraArbeit2Select'].forEach(id=>{
+  ;['PerformerSelect','MtsTypeSelect','ShowroomHoursSelect','ExtraArbeit1Select','ExtraArbeit2Select','ExtraArbeit3Select','ExtraArbeit4Select'].forEach(id=>{
     $(id).addEventListener('change', ()=>validateJobForm(prefix, getSelected, extraValid))
+  })
+  $('ExtraArbeitAddSlotBtn').addEventListener('click', ()=>{
+    if($('ExtraArbeit3Wrap').style.display === 'none'){
+      $('ExtraArbeit3Wrap').style.display = 'block'
+    } else if($('ExtraArbeit4Wrap').style.display === 'none'){
+      $('ExtraArbeit4Wrap').style.display = 'block'
+      $('ExtraArbeitAddSlotBtn').style.display = 'none'
+    }
   })
   $('JobSearch').addEventListener('input', ()=>{
     const q = $('JobSearch').value.trim().toLowerCase()
@@ -638,10 +673,14 @@ function readJobFormValues(prefix, jt){
     mtsSubtype: $('MtsTypeSelect').value || null,
     fotoservice: $('FotoserviceSelect').value === 'ja',
     showroomHours: $('ShowroomHoursSelect').value ? parseInt($('ShowroomHoursSelect').value) : null,
-    customDescription: $('TextDescriptionInput').value ? $('TextDescriptionInput').value.trim() : null,
+    customDescription: jt.code === 'Regiestunde'
+      ? ($('RegiestundeNoteInput').value.trim() || null)
+      : ($('TextDescriptionInput').value ? $('TextDescriptionInput').value.trim() : null),
     textDurationMinutes: $('TextDurationInput').value ? parseInt($('TextDurationInput').value) : null,
     extraArbeit1Id: $('ExtraArbeit1Select').value || null,
-    extraArbeit2Id: $('ExtraArbeit2Select').value || null
+    extraArbeit2Id: $('ExtraArbeit2Select').value || null,
+    extraArbeit3Id: $('ExtraArbeit3Select').value || null,
+    extraArbeit4Id: $('ExtraArbeit4Select').value || null
   }
 }
 
@@ -734,6 +773,7 @@ async function insertJobRecord({ jobType, employeeId, values, dateStr, createdAt
     payload.custom_description = values.customDescription
     payload.custom_duration_minutes = values.textDurationMinutes
   }
+  if(jobType.code === 'Regiestunde') payload.custom_description = values.customDescription
   if(FOTOSERVICE_JOB_CODES.includes(jobType.code)){
     payload.fotoservice = values.fotoservice
   } else if(wantsFotoservice){
@@ -745,11 +785,11 @@ async function insertJobRecord({ jobType, employeeId, values, dateStr, createdAt
     payload.fotoservice = false
   }
 
-  // Extra Arbeit: seçilen 1-2 ek hizmetin fiyatı/süresi Regiestunde gibi
+  // Extra Arbeit: seçilen 1-4 ek hizmetin fiyatı/süresi Regiestunde gibi
   // ana kayda toplanıyor, ayrı bir kayıt oluşturulmuyor. FOTOSERVICE
   // seçilmişse ayrı ele alınıyor (yukarıda), bu yüzden buradan hariç tutulur.
   if(jobType.allows_extra_arbeit){
-    const extraIds = [values.extraArbeit1Id, values.extraArbeit2Id].filter(Boolean)
+    const extraIds = [values.extraArbeit1Id, values.extraArbeit2Id, values.extraArbeit3Id, values.extraArbeit4Id].filter(Boolean)
     const nonFotoExtraIds = extraIds.filter(id => jobTypes.find(j => j.id === id)?.code !== 'FOTOSERVICE')
     if(nonFotoExtraIds.length){
       let extraPrice = 0, extraMinutes = 0
@@ -766,6 +806,8 @@ async function insertJobRecord({ jobType, employeeId, values, dateStr, createdAt
       payload.extra_arbeit_minutes = extraMinutes
       payload.extra_arbeit_1_code = extraCodes[0] || null
       payload.extra_arbeit_2_code = extraCodes[1] || null
+      payload.extra_arbeit_3_code = extraCodes[2] || null
+      payload.extra_arbeit_4_code = extraCodes[3] || null
     }
   }
 
@@ -792,7 +834,30 @@ async function insertJobRecord({ jobType, employeeId, values, dateStr, createdAt
     })
   }
 
-  const { error } = await supabase.from('records').insert(rowsToInsert)
+  // Birden fazla satır TEK bulk insert'te gidiyorsa (Fotoservice owner satırı
+  // + ana kayıt gibi), PostgREST tüm satırların key BİRLEŞİMİNİ sütun listesi
+  // olarak kullanır — bir satırda eksik olan her key AÇIKÇA null gönderilir.
+  // fotoservice (NOT NULL) için bu zaten yukarıda elle yönetiliyor; ama
+  // extra_arbeit_price/minutes/1-4_code, custom_price, performed_by,
+  // mts_subtype, custom_duration_minutes, custom_description gibi nullable
+  // alanlar da satırlar arasında FARKLI key setlerine sahip olabiliyor —
+  // bu, hangi satırın hangi alanı gerçekten "sahiplendiğini" karıştırmaya
+  // (ör. Fotoservice + 2. Extra Arbeit birlikte seçilince ana kaydın extra
+  // arbeit verisinin kaybolduğu bildirilen hata) yol açabiliyor. Bunu kalıcı
+  // olarak önlemek için, birden fazla satır varsa TÜM satırlar aynı key
+  // setine (eksik olan her yerde açık null ile) normalize ediliyor.
+  let finalRows = rowsToInsert
+  if(rowsToInsert.length > 1){
+    const allKeys = new Set()
+    rowsToInsert.forEach(r => Object.keys(r).forEach(k => allKeys.add(k)))
+    finalRows = rowsToInsert.map(r => {
+      const normalized = {}
+      allKeys.forEach(k => { normalized[k] = k in r ? r[k] : null })
+      return normalized
+    })
+  }
+
+  const { error } = await supabase.from('records').insert(finalRows)
   return { error, count: 1 }
 }
 
@@ -1088,6 +1153,8 @@ async function renderEmployeeDay(){
               ${r.fotoservice ? `<span class="extra">Fotoservice</span>` : ''}
               ${r.extra_arbeit_1_code ? `<span class="extra">+${r.extra_arbeit_1_code}</span>` : ''}
               ${r.extra_arbeit_2_code ? `<span class="extra">+${r.extra_arbeit_2_code}</span>` : ''}
+              ${r.extra_arbeit_3_code ? `<span class="extra">+${r.extra_arbeit_3_code}</span>` : ''}
+              ${r.extra_arbeit_4_code ? `<span class="extra">+${r.extra_arbeit_4_code}</span>` : ''}
               <button class="del-btn" data-del="${r.id}" title="Löschen">×</button>
             </div>
           </div>
@@ -1648,7 +1715,7 @@ async function renderBossDashboard(){
     <tr>
       <td>${localDateStr(r.created_at)}</td>
       <td>${r.employees.name}</td>
-      <td>${jobDisplayLabel(r)}${r.performed_by ? ' · ' + r.performed_by : ''}${r.fotoservice ? ' · Foto' : ''}${r.custom_duration_minutes ? (r.job_types.code === 'Text Aufbereitung' ? ' · ' + r.custom_duration_minutes + ' Min' : ' · ' + Math.round(r.custom_duration_minutes/60) + ' Std') : ''}${r.extra_arbeit_1_code ? ' · +' + r.extra_arbeit_1_code : ''}${r.extra_arbeit_2_code ? ' · +' + r.extra_arbeit_2_code : ''}${r.custom_description ? ' · ' + r.custom_description : ''}</td>
+      <td>${jobDisplayLabel(r)}${r.performed_by ? ' · ' + r.performed_by : ''}${r.fotoservice ? ' · Foto' : ''}${r.custom_duration_minutes ? (r.job_types.code === 'Text Aufbereitung' ? ' · ' + r.custom_duration_minutes + ' Min' : ' · ' + Math.round(r.custom_duration_minutes/60) + ' Std') : ''}${r.extra_arbeit_1_code ? ' · +' + r.extra_arbeit_1_code : ''}${r.extra_arbeit_2_code ? ' · +' + r.extra_arbeit_2_code : ''}${r.extra_arbeit_3_code ? ' · +' + r.extra_arbeit_3_code : ''}${r.extra_arbeit_4_code ? ' · +' + r.extra_arbeit_4_code : ''}${r.custom_description ? ' · ' + r.custom_description : ''}</td>
       <td>${r.ref_no || '-'}</td>
       <td>${fmtEur(recordPrice(r))}</td>
     </tr>`).join('')
@@ -2279,6 +2346,20 @@ function renderBkRecordEditForm(r){
     const showShowroomHours = jt.code === 'Showroom Pflege'
     const showPerformer = jt.code === 'SR-Delle'
     const showTextFields = jt.code === 'Text Aufbereitung'
+    const showRegiestundeNote = jt.code === 'Regiestunde'
+    const showExtraArbeit = !!jt.allows_extra_arbeit
+    // Fotoservice, extra arbeit üzerinden seçilirse şube sorumlusuna ayrı bir
+    // kayıt oluşturulması gerekir (bkz. insertJobRecord) — bu düzenleme formu
+    // (FOTOSERVICE zaten yukarıda KAPSAM DIŞI bırakılmıştı) o ek kaydı
+    // oluşturmuyor, bu yüzden burada seçenek olarak hiç sunulmuyor.
+    const extraOptsHtml = showExtraArbeit
+      ? ('<option value="">Keine</option>' + extraArbeitEligibleJobTypes(jt).filter(j => j.code !== 'FOTOSERVICE').map(j => `<option value="${j.id}">${jobExtraArbeitLabel(j)}</option>`).join(''))
+      : ''
+    function extraSelectHtml(n, codeField){
+      const selectedId = jobTypes.find(j => j.code === v[codeField])?.id || ''
+      return `<div><label style="margin-top:0;">Extra Arbeit ${n} (optional)</label><select id="bkEditExtra${n}-${r.id}">${extraOptsHtml}</select></div>`
+        .replace(`<option value="${selectedId}">`, `<option value="${selectedId}" selected>`)
+    }
     return `
       ${showRef ? `<div><label style="margin-top:0;">AKT-Nummer</label><input type="text" id="bkEditRef-${r.id}" value="${v.ref_no || ''}"></div>` : ''}
       ${showPrice ? `<div><label style="margin-top:0;">Preis (€)</label><input type="number" id="bkEditPrice-${r.id}" value="${v.custom_price ?? ''}" step="0.01" min="0"></div>` : ''}
@@ -2290,6 +2371,13 @@ function renderBkRecordEditForm(r){
         <div><label style="margin-top:0;">Dauer (Minuten)</label><input type="number" id="bkEditDuration-${r.id}" value="${v.custom_duration_minutes ?? ''}" min="1" step="1"></div>
       ` : ''}
       ${showRegiestunde ? `<div><label style="margin-top:0;">Regiestunde (Std.)</label><input type="number" id="bkEditRegie-${r.id}" value="${v.regiestunde ?? ''}" step="0.5" min="0"></div>` : ''}
+      ${showRegiestundeNote ? `<div><label style="margin-top:0;">Notiz (optional)</label><textarea id="bkEditRegieNote-${r.id}" rows="2">${v.custom_description || ''}</textarea></div>` : ''}
+      ${showExtraArbeit ? `
+        ${extraSelectHtml(1, 'extra_arbeit_1_code')}
+        ${extraSelectHtml(2, 'extra_arbeit_2_code')}
+        ${extraSelectHtml(3, 'extra_arbeit_3_code')}
+        ${extraSelectHtml(4, 'extra_arbeit_4_code')}
+      ` : ''}
     `
   }
 
@@ -2312,6 +2400,10 @@ function renderBkRecordEditForm(r){
       const dur = $('Duration')?.value
       ok = ok && !!$('Desc')?.value.trim() && dur && parseFloat(dur) > 0
     }
+    if(jt.allows_extra_arbeit){
+      const chosen = [$('Extra1')?.value, $('Extra2')?.value, $('Extra3')?.value, $('Extra4')?.value].filter(Boolean)
+      if(new Set(chosen).size !== chosen.length) ok = false
+    }
     const saveBtn = document.getElementById(`bkEditSave-${r.id}`)
     if(saveBtn) saveBtn.disabled = !ok
   }
@@ -2321,7 +2413,7 @@ function renderBkRecordEditForm(r){
       const el = document.getElementById(`bkEdit${suffix}-${r.id}`)
       if(el) el.addEventListener('input', ()=>validate(jt))
     })
-    ;['MtsType','ShowroomHours','Performer'].forEach(suffix=>{
+    ;['MtsType','ShowroomHours','Performer','Extra1','Extra2','Extra3','Extra4'].forEach(suffix=>{
       const el = document.getElementById(`bkEdit${suffix}-${r.id}`)
       if(el) el.addEventListener('change', ()=>validate(jt))
     })
@@ -2373,7 +2465,9 @@ function renderBkRecordEditForm(r){
       extra_arbeit_price: null,
       extra_arbeit_minutes: null,
       extra_arbeit_1_code: null,
-      extra_arbeit_2_code: null
+      extra_arbeit_2_code: null,
+      extra_arbeit_3_code: null,
+      extra_arbeit_4_code: null
     }
     if(!FOTOSERVICE_JOB_CODES.includes(jt.code)) payload.fotoservice = false
     if(jt.requires_ref !== false){
@@ -2405,6 +2499,7 @@ function renderBkRecordEditForm(r){
       const v = $('Regie')?.value
       if(!v || parseFloat(v) <= 0){ showToast('Bitte gültige Stundenzahl eingeben'); return }
       payload.regiestunde = parseFloat(v)
+      payload.custom_description = $('RegieNote')?.value.trim() || null
     } else if(jt.is_aufbereitung){
       const v = $('Regie')?.value
       payload.regiestunde = v ? parseFloat(v) : null
@@ -2415,6 +2510,27 @@ function renderBkRecordEditForm(r){
       if(!desc || !dur || parseFloat(dur) <= 0){ showToast('Bitte Beschreibung und Dauer ausfüllen'); return }
       payload.custom_description = desc
       payload.custom_duration_minutes = parseInt(dur)
+    }
+    if(jt.allows_extra_arbeit){
+      const extraIds = [$('Extra1')?.value, $('Extra2')?.value, $('Extra3')?.value, $('Extra4')?.value].filter(Boolean)
+      if(extraIds.length){
+        let extraPrice = 0, extraMinutes = 0
+        const extraCodes = []
+        extraIds.forEach(id=>{
+          const ej = jobTypes.find(j => j.id === id)
+          if(ej){
+            extraPrice += ej.price_eur || 0
+            extraMinutes += ej.duration_minutes || 0
+            extraCodes.push(ej.code)
+          }
+        })
+        payload.extra_arbeit_price = extraPrice
+        payload.extra_arbeit_minutes = extraMinutes
+        payload.extra_arbeit_1_code = extraCodes[0] || null
+        payload.extra_arbeit_2_code = extraCodes[1] || null
+        payload.extra_arbeit_3_code = extraCodes[2] || null
+        payload.extra_arbeit_4_code = extraCodes[3] || null
+      }
     }
     const { error, count } = await supabase.from('records').update(payload, { count: 'exact' }).eq('id', r.id)
     if(error){ showToast('Fehler: ' + error.message); return }
