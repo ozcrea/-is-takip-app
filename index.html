@@ -187,7 +187,7 @@ const FOTOSERVICE_JOB_CODES = ['GW-A', 'GW-B', 'GW-FR', 'VFW-W1', 'VFW-W2']
 // tipleri. "Smart Repair", Text Aufbereitung ile AYNI arayüzü kullanır —
 // tek farkı gelirinin Dashboard'da MTS/Privat'a değil, "Lack" bucket'ına
 // yazılması (bkz. renderBossDashboard).
-const TEXT_STYLE_CODES = ['Text Aufbereitung', 'Smart Repair']
+const TEXT_STYLE_CODES = ['Text Aufbereitung', 'Smart Repair Text']
 // SR-Lack/SR-Delle için opsiyonel Beschreibung notu — Text Aufbereitung'ın
 // tersine ZORUNLU değil, sadece ek bilgi.
 const SR_NOTE_CODES = ['SR-Lack', 'SR-Delle']
@@ -1691,7 +1691,7 @@ async function renderBossDashboard(){
       normalRevenue += price
       // "Smart Repair" (Text Aufbereitung tarzı serbest metin işi) geliri de
       // SR-Lack ile AYNI kovaya (Lack kartı) yazılır — bkz. schema_v36.sql.
-      if(r.job_types.code === 'SR-Lack' || r.job_types.code === 'Smart Repair') lackRevenue += price
+      if(r.job_types.code === 'SR-Lack' || r.job_types.code === 'Smart Repair Text') lackRevenue += price
       else if(r.job_types.code === 'SR-Delle') delleRevenue += price
     }
   })
