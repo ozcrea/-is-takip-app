@@ -183,6 +183,14 @@ const BRANCHES = ['Ausschläger Weg', 'Horn', 'Wiesendamm']
 const SR_DELLE_PERFORMERS = ['Delltom', 'Hesam', 'M']
 const FOTOSERVICE_PRICE = 9.88
 const FOTOSERVICE_JOB_CODES = ['GW-A', 'GW-B', 'GW-FR', 'VFW-W1', 'VFW-W2']
+// Serbest metin: Preis + Beschreibung + Dauer (Minuten) ile çalışan iş
+// tipleri. "Smart Repair", Text Aufbereitung ile AYNI arayüzü kullanır —
+// tek farkı gelirinin Dashboard'da MTS/Privat'a değil, "Lack" bucket'ına
+// yazılması (bkz. renderBossDashboard).
+const TEXT_STYLE_CODES = ['Text Aufbereitung', 'Smart Repair']
+// SR-Lack/SR-Delle için opsiyonel Beschreibung notu — Text Aufbereitung'ın
+// tersine ZORUNLU değil, sadece ek bilgi.
+const SR_NOTE_CODES = ['SR-Lack', 'SR-Delle']
 const VAPID_PUBLIC_KEY = 'BHWTo7bjAcsBLL9HbvJczCDcBj78aB4xv1atwN_CaaF7-PF5o-6WPKguMaRC6_-L_d0kiLNQTaxCUBqr6x4yIfU'
 const SESSION_KEY = 'wt_employee_id'
 const AUTH_EMAIL_DOMAIN = 'mitarbeiter.autowerk.app'
@@ -490,6 +498,10 @@ function jobFormHtml(prefix, qtyCounts, knownBranch){
         ${SR_DELLE_PERFORMERS.map(p => `<option value="${p}">${p}</option>`).join('')}
       </select>
     </div>
+    <div id="${prefix}SRNoteWrap" style="display:none;">
+      <label>Beschreibung (optional)</label>
+      <textarea id="${prefix}SRNoteInput" rows="2" placeholder="Was wurde gemacht?"></textarea>
+    </div>
     <div id="${prefix}FotoserviceWrap" style="display:none;">
       <label>Fotoservice</label>
       <select id="${prefix}FotoserviceSelect">
@@ -570,7 +582,7 @@ function validateJobForm(prefix, getSelected, extraValid){
       const v = $('RegiestundeHoursInput').value
       ok = ok && v && parseFloat(v) > 0
     }
-    if(jt.code === 'Text Aufbereitung'){
+    if(TEXT_STYLE_CODES.includes(jt.code)){
       const durVal = $('TextDurationInput').value
       ok = ok && !!$('TextDescriptionInput').value.trim() && durVal && parseFloat(durVal) > 0
     }
@@ -598,11 +610,12 @@ function wireJobForm(prefix, getSelected, setSelected, extraValid){
       $('RegiestundeNoteWrap').style.display = jt.code === 'Regiestunde' ? 'block' : 'none'
       $('PriceWrap').style.display = (jt.is_variable_price && jt.code !== 'FOTOSERVICE') ? 'block' : 'none'
       $('PerformerWrap').style.display = jt.code === 'SR-Delle' ? 'block' : 'none'
+      $('SRNoteWrap').style.display = SR_NOTE_CODES.includes(jt.code) ? 'block' : 'none'
       $('MtsTypeWrap').style.display = jt.code === 'MTS-SR' ? 'block' : 'none'
       $('ShowroomHoursWrap').style.display = jt.code === 'Showroom Pflege' ? 'block' : 'none'
       $('FotoserviceWrap').style.display = FOTOSERVICE_JOB_CODES.includes(jt.code) ? 'block' : 'none'
-      $('TextDescriptionWrap').style.display = jt.code === 'Text Aufbereitung' ? 'block' : 'none'
-      $('TextDurationWrap').style.display = jt.code === 'Text Aufbereitung' ? 'block' : 'none'
+      $('TextDescriptionWrap').style.display = TEXT_STYLE_CODES.includes(jt.code) ? 'block' : 'none'
+      $('TextDurationWrap').style.display = TEXT_STYLE_CODES.includes(jt.code) ? 'block' : 'none'
       $('ExtraArbeitWrap').style.display = jt.allows_extra_arbeit ? 'block' : 'none'
       if(jt.allows_extra_arbeit){
         const optsHtml = '<option value="">Keine</option>' + extraArbeitOptionsHtml(jt)
@@ -622,10 +635,11 @@ function wireJobForm(prefix, getSelected, setSelected, extraValid){
       if(!jt.is_aufbereitung) $('Regiestunde').value = ''
       if(jt.code !== 'Regiestunde'){ $('RegiestundeHoursInput').value = ''; $('RegiestundeNoteInput').value = '' }
       if(jt.code !== 'SR-Delle') $('PerformerSelect').value = ''
+      if(!SR_NOTE_CODES.includes(jt.code)) $('SRNoteInput').value = ''
       if(jt.code !== 'MTS-SR') $('MtsTypeSelect').value = ''
       if(jt.code !== 'Showroom Pflege') $('ShowroomHoursSelect').value = ''
       if(!FOTOSERVICE_JOB_CODES.includes(jt.code)) $('FotoserviceSelect').value = 'nein'
-      if(jt.code !== 'Text Aufbereitung'){ $('TextDescriptionInput').value = ''; $('TextDurationInput').value = '' }
+      if(!TEXT_STYLE_CODES.includes(jt.code)){ $('TextDescriptionInput').value = ''; $('TextDurationInput').value = '' }
       if(!jt.allows_extra_arbeit){ $('ExtraArbeit1Select').value = ''; $('ExtraArbeit2Select').value = '' }
       if(jt.is_quantity) $('QtyInput').value = ''
       validateJobForm(prefix, getSelected, extraValid)
@@ -675,6 +689,8 @@ function readJobFormValues(prefix, jt){
     showroomHours: $('ShowroomHoursSelect').value ? parseInt($('ShowroomHoursSelect').value) : null,
     customDescription: jt.code === 'Regiestunde'
       ? ($('RegiestundeNoteInput').value.trim() || null)
+      : SR_NOTE_CODES.includes(jt.code)
+      ? ($('SRNoteInput').value.trim() || null)
       : ($('TextDescriptionInput').value ? $('TextDescriptionInput').value.trim() : null),
     textDurationMinutes: $('TextDurationInput').value ? parseInt($('TextDurationInput').value) : null,
     extraArbeit1Id: $('ExtraArbeit1Select').value || null,
@@ -769,11 +785,11 @@ async function insertJobRecord({ jobType, employeeId, values, dateStr, createdAt
   if(jobType.code === 'SR-Delle') payload.performed_by = values.performedBy
   if(jobType.code === 'MTS-SR') payload.mts_subtype = values.mtsSubtype
   if(jobType.code === 'Showroom Pflege') payload.custom_duration_minutes = values.showroomHours * 60
-  if(jobType.code === 'Text Aufbereitung'){
+  if(TEXT_STYLE_CODES.includes(jobType.code)){
     payload.custom_description = values.customDescription
     payload.custom_duration_minutes = values.textDurationMinutes
   }
-  if(jobType.code === 'Regiestunde') payload.custom_description = values.customDescription
+  if(jobType.code === 'Regiestunde' || SR_NOTE_CODES.includes(jobType.code)) payload.custom_description = values.customDescription
   if(FOTOSERVICE_JOB_CODES.includes(jobType.code)){
     payload.fotoservice = values.fotoservice
   } else if(wantsFotoservice){
@@ -1149,7 +1165,7 @@ async function renderEmployeeDay(){
             <div><span class="code">${r.job_types.code}</span><span class="ref">${r.ref_no || ''}${r.performed_by ? ' · ' + r.performed_by : ''}${r.mts_subtype ? ' · ' + r.mts_subtype : ''}${r.custom_description ? ' · ' + r.custom_description : ''}</span></div>
             <div class="right">
               ${r.regiestunde ? `<span class="extra">+${r.regiestunde} Std</span>` : ''}
-              ${r.custom_duration_minutes ? (r.job_types.code === 'Text Aufbereitung' ? `<span class="extra">${r.custom_duration_minutes} Min</span>` : `<span class="extra">${Math.round(r.custom_duration_minutes/60)} Std</span>`) : ''}
+              ${r.custom_duration_minutes ? (TEXT_STYLE_CODES.includes(r.job_types.code) ? `<span class="extra">${r.custom_duration_minutes} Min</span>` : `<span class="extra">${Math.round(r.custom_duration_minutes/60)} Std</span>`) : ''}
               ${r.fotoservice ? `<span class="extra">Fotoservice</span>` : ''}
               ${r.extra_arbeit_1_code ? `<span class="extra">+${r.extra_arbeit_1_code}</span>` : ''}
               ${r.extra_arbeit_2_code ? `<span class="extra">+${r.extra_arbeit_2_code}</span>` : ''}
@@ -1673,7 +1689,9 @@ async function renderBossDashboard(){
     else if(r.job_types.code === 'Privat') privatRevenue += price
     else {
       normalRevenue += price
-      if(r.job_types.code === 'SR-Lack') lackRevenue += price
+      // "Smart Repair" (Text Aufbereitung tarzı serbest metin işi) geliri de
+      // SR-Lack ile AYNI kovaya (Lack kartı) yazılır — bkz. schema_v36.sql.
+      if(r.job_types.code === 'SR-Lack' || r.job_types.code === 'Smart Repair') lackRevenue += price
       else if(r.job_types.code === 'SR-Delle') delleRevenue += price
     }
   })
@@ -1715,7 +1733,7 @@ async function renderBossDashboard(){
     <tr>
       <td>${localDateStr(r.created_at)}</td>
       <td>${r.employees.name}</td>
-      <td>${jobDisplayLabel(r)}${r.performed_by ? ' · ' + r.performed_by : ''}${r.fotoservice ? ' · Foto' : ''}${r.custom_duration_minutes ? (r.job_types.code === 'Text Aufbereitung' ? ' · ' + r.custom_duration_minutes + ' Min' : ' · ' + Math.round(r.custom_duration_minutes/60) + ' Std') : ''}${r.extra_arbeit_1_code ? ' · +' + r.extra_arbeit_1_code : ''}${r.extra_arbeit_2_code ? ' · +' + r.extra_arbeit_2_code : ''}${r.extra_arbeit_3_code ? ' · +' + r.extra_arbeit_3_code : ''}${r.extra_arbeit_4_code ? ' · +' + r.extra_arbeit_4_code : ''}${r.custom_description ? ' · ' + r.custom_description : ''}</td>
+      <td>${jobDisplayLabel(r)}${r.performed_by ? ' · ' + r.performed_by : ''}${r.fotoservice ? ' · Foto' : ''}${r.custom_duration_minutes ? (TEXT_STYLE_CODES.includes(r.job_types.code) ? ' · ' + r.custom_duration_minutes + ' Min' : ' · ' + Math.round(r.custom_duration_minutes/60) + ' Std') : ''}${r.extra_arbeit_1_code ? ' · +' + r.extra_arbeit_1_code : ''}${r.extra_arbeit_2_code ? ' · +' + r.extra_arbeit_2_code : ''}${r.extra_arbeit_3_code ? ' · +' + r.extra_arbeit_3_code : ''}${r.extra_arbeit_4_code ? ' · +' + r.extra_arbeit_4_code : ''}${r.custom_description ? ' · ' + r.custom_description : ''}</td>
       <td>${r.ref_no || '-'}</td>
       <td>${fmtEur(recordPrice(r))}</td>
     </tr>`).join('')
@@ -2345,8 +2363,9 @@ function renderBkRecordEditForm(r){
     const showMtsType = jt.code === 'MTS-SR'
     const showShowroomHours = jt.code === 'Showroom Pflege'
     const showPerformer = jt.code === 'SR-Delle'
-    const showTextFields = jt.code === 'Text Aufbereitung'
+    const showTextFields = TEXT_STYLE_CODES.includes(jt.code)
     const showRegiestundeNote = jt.code === 'Regiestunde'
+    const showSRNote = SR_NOTE_CODES.includes(jt.code)
     const showExtraArbeit = !!jt.allows_extra_arbeit
     // Fotoservice, extra arbeit üzerinden seçilirse şube sorumlusuna ayrı bir
     // kayıt oluşturulması gerekir (bkz. insertJobRecord) — bu düzenleme formu
@@ -2372,6 +2391,7 @@ function renderBkRecordEditForm(r){
       ` : ''}
       ${showRegiestunde ? `<div><label style="margin-top:0;">Regiestunde (Std.)</label><input type="number" id="bkEditRegie-${r.id}" value="${v.regiestunde ?? ''}" step="0.5" min="0"></div>` : ''}
       ${showRegiestundeNote ? `<div><label style="margin-top:0;">Notiz (optional)</label><textarea id="bkEditRegieNote-${r.id}" rows="2">${v.custom_description || ''}</textarea></div>` : ''}
+      ${showSRNote ? `<div><label style="margin-top:0;">Beschreibung (optional)</label><textarea id="bkEditSRNote-${r.id}" rows="2">${v.custom_description || ''}</textarea></div>` : ''}
       ${showExtraArbeit ? `
         ${extraSelectHtml(1, 'extra_arbeit_1_code')}
         ${extraSelectHtml(2, 'extra_arbeit_2_code')}
@@ -2396,7 +2416,7 @@ function renderBkRecordEditForm(r){
       const v = $('Regie')?.value
       ok = ok && v && parseFloat(v) > 0
     }
-    if(jt.code === 'Text Aufbereitung'){
+    if(TEXT_STYLE_CODES.includes(jt.code)){
       const dur = $('Duration')?.value
       ok = ok && !!$('Desc')?.value.trim() && dur && parseFloat(dur) > 0
     }
@@ -2502,13 +2522,14 @@ function renderBkRecordEditForm(r){
       const v = $('Regie')?.value
       payload.regiestunde = v ? parseFloat(v) : null
     }
-    if(jt.code === 'Text Aufbereitung'){
+    if(TEXT_STYLE_CODES.includes(jt.code)){
       const desc = $('Desc')?.value.trim()
       const dur = $('Duration')?.value
       if(!desc || !dur || parseFloat(dur) <= 0){ showToast('Bitte Beschreibung und Dauer ausfüllen'); return }
       payload.custom_description = desc
       payload.custom_duration_minutes = parseInt(dur)
     }
+    if(SR_NOTE_CODES.includes(jt.code)) payload.custom_description = $('SRNote')?.value.trim() || null
     if(jt.allows_extra_arbeit){
       const extraIds = [$('Extra1')?.value, $('Extra2')?.value, $('Extra3')?.value, $('Extra4')?.value].filter(Boolean)
       if(extraIds.length){
