@@ -19,14 +19,21 @@
 <link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@600;700&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@500;700&display=swap" rel="stylesheet">
 <style>
   :root{
-    --graphite:#1B1E21; --steel:#26292D; --steel-2:#2F3338;
-    --amber:#F5A623; --green:#4CAF6D; --red:#E4572E; --blue:#5B9BD5; --purple:#9B7EDE;
-    --ink:#ECEDEE; --ink-dim:#9AA0A6; --line:#3A3F44;
+    --graphite:#16181B; --steel:#1E2125; --steel-2:#272B30;
+    --amber:#F5A623; --green:#4CC38A; --red:#E5534B; --blue:#6FA3D8; --purple:#B3A6E6;
+    --ink:#ECEFF3; --ink-dim:#8B95A3; --faint:#5C6571; --line:#33383E;
   }
   *{box-sizing:border-box;}
   html,body{margin:0;padding:0;}
   body{ background:var(--graphite); color:var(--ink); font-family:'Inter',sans-serif; min-height:100vh; -webkit-tap-highlight-color:transparent; }
   .app{ max-width:520px; margin:0 auto; min-height:100vh; display:flex; flex-direction:column; }
+  /* Bilgisayarda geniş düzen: içinde .layout-wide olan ekranlar (Chef
+     paneli, Mitarbeiterbericht, çalışan ekranı) 520px sınırından çıkar. */
+  @media (min-width:900px){
+    .app:has(.layout-wide){ max-width:1240px; }
+    .app:has(.layout-wide) main{ padding:24px 32px 60px; }
+    .app:has(.layout-wide) header{ padding-left:32px; padding-right:32px; }
+  }
   header{ padding:calc(20px + env(safe-area-inset-top)) 20px 14px; border-bottom:1px solid var(--line); display:flex; justify-content:space-between; align-items:flex-start; }
   header .eyebrow{ font-family:'JetBrains Mono',monospace; font-size:11px; letter-spacing:.12em; text-transform:uppercase; color:var(--amber); margin:0 0 4px; }
   header .eyebrow .cross{ color:#7C8B9C; }
@@ -36,7 +43,7 @@
   nav button{ flex:1; background:none; border:none; color:var(--ink-dim); font-weight:600; font-size:14px; padding:14px 8px; cursor:pointer; border-bottom:2px solid transparent; }
   nav button.active{ color:var(--amber); border-bottom-color:var(--amber); }
   main{ flex:1; padding:20px; padding-bottom:60px; }
-  .card{ background:var(--steel); border:1px solid var(--line); border-radius:12px; padding:18px; margin-bottom:14px; }
+  .card{ background:var(--steel); border:1px solid var(--line); border-radius:14px; padding:18px; margin-bottom:14px; }
   label{ display:block; font-size:12px; font-weight:600; color:var(--ink-dim); text-transform:uppercase; letter-spacing:.06em; margin-bottom:8px; }
   select, input{ width:100%; background:var(--steel-2); border:1px solid var(--line); color:var(--ink); font-family:'Inter',sans-serif; font-size:16px; padding:14px; border-radius:8px; margin-bottom:14px; }
   select:focus, input:focus{ outline:2px solid var(--amber); outline-offset:1px; }
@@ -90,15 +97,171 @@
   .login-screen .box{ width:100%; max-width:320px; }
   .toast{ position:fixed; bottom:20px; left:50%; transform:translateX(-50%); background:var(--steel-2); border:1px solid var(--amber); color:var(--ink); padding:12px 20px; border-radius:8px; font-size:14px; z-index:100; }
   .refresh{ background:none; border:1px solid var(--line); color:var(--ink-dim); font-size:12px; padding:8px 12px; border-radius:6px; cursor:pointer; margin-bottom:14px; }
-  .revenue-split{ display:flex; gap:12px; flex-wrap:wrap; }
-  .revenue-box{ flex:1; min-width:30%; text-align:center; padding:12px 6px; background:var(--steel-2); border-radius:8px; }
-  .revenue-box .amount{ font-family:'JetBrains Mono',monospace; font-size:18px; font-weight:700; color:var(--green); }
-  .revenue-box.mts .amount{ color:var(--blue); }
-  .revenue-box.privat .amount{ color:var(--purple); }
-  .revenue-box .sub{ font-size:10px; color:var(--ink-dim); text-transform:uppercase; letter-spacing:.04em; margin-top:4px; }
-  .revenue-box .net{ font-size:10px; color:var(--ink-dim); margin-top:2px; }
   .revenue-total{ text-align:center; padding:6px 0 2px; font-family:'JetBrains Mono',monospace; font-size:26px; font-weight:700; }
   .revenue-total-net{ text-align:center; padding:0 0 14px; font-size:11px; color:var(--ink-dim); }
+
+  /* ---- Chef paneli (v7.2) ---- */
+  .mono{ font-family:'JetBrains Mono',monospace; font-variant-numeric:tabular-nums; }
+  .dash{ display:flex; flex-direction:column; }
+  .range-top{ display:flex; justify-content:space-between; align-items:center; margin-bottom:8px; }
+  .range-top label{ margin:0; }
+  .range-actions{ display:flex; gap:8px; }
+  .icon-btn{ background:none; border:1px solid var(--line); color:var(--ink-dim); font-size:12px; padding:6px 10px; border-radius:8px; cursor:pointer; }
+  .range-sub{ font-size:12px; color:var(--ink-dim); }
+  .filter-toggle{ display:inline-flex; align-items:center; gap:6px; }
+  .filter-toggle .dot{ width:7px; height:7px; border-radius:50%; background:var(--blue); display:inline-block; }
+  .filter-panel{ display:none; margin-top:14px; }
+  .filter-panel.open{ display:block; }
+  .hero .hero-total.revenue-total{ text-align:left; font-size:34px; padding:4px 0 2px; letter-spacing:-.02em; }
+  .hero .revenue-total-net{ text-align:left; padding:0; font-size:13px; }
+  .hero .revenue-total-net b{ color:var(--ink); font-family:'JetBrains Mono',monospace; font-weight:600; }
+  .stackbar{ display:flex; height:10px; border-radius:6px; overflow:hidden; gap:2px; margin:16px 0 12px; background:var(--steel-2); }
+  .stackbar i{ display:block; height:100%; }
+  .legend{ display:grid; grid-template-columns:repeat(3,1fr); gap:8px; font-size:11.5px; color:var(--ink-dim); }
+  .legend b{ display:block; color:var(--ink); font-family:'JetBrains Mono',monospace; font-size:13.5px; margin-top:2px; font-weight:600; }
+  .sw{ display:inline-block; width:8px; height:8px; border-radius:2px; margin-right:5px; vertical-align:0; }
+  .c-apz{ background:var(--amber); } .c-mts{ background:var(--blue); } .c-privat{ background:var(--purple); }
+  .apz-head{ padding-bottom:14px; border-bottom:1px solid var(--line); }
+  .apz-head .sub{ font-size:11px; letter-spacing:.1em; text-transform:uppercase; color:var(--amber); font-weight:700; }
+  .apz-head .apz-desc{ font-size:12px; color:var(--faint); margin-top:3px; }
+  .apz-head .amount{ font-family:'JetBrains Mono',monospace; font-size:28px; font-weight:700; margin-top:8px; letter-spacing:-.02em; }
+  .apz-head .net{ font-size:13px; color:var(--ink-dim); margin-top:2px; }
+  .davon{ font-size:11px; letter-spacing:.1em; text-transform:uppercase; color:var(--faint); font-weight:600; margin:14px 0 2px; }
+  .brk-row{ margin-top:12px; }
+  .brk-top{ display:flex; justify-content:space-between; align-items:baseline; gap:10px; font-size:14px; }
+  .brk-top .amount{ font-family:'JetBrains Mono',monospace; font-weight:600; white-space:nowrap; }
+  .brk-meta{ display:flex; justify-content:space-between; gap:10px; font-size:11.5px; color:var(--faint); margin-top:1px; }
+  .brk-meta .net{ font-family:'JetBrains Mono',monospace; white-space:nowrap; }
+  .hbar{ height:5px; background:var(--steel-2); border-radius:3px; margin-top:6px; overflow:hidden; }
+  .hbar i{ display:block; height:100%; border-radius:3px; background:var(--amber); }
+  .hbar i.b1{ background:#F8C36B; } .hbar i.b2{ background:#FBDDA6; } .hbar i.blue{ background:var(--blue); }
+  .side-col{ display:grid; grid-template-columns:1fr 1fr; gap:12px; margin-bottom:14px; }
+  .side-col .card{ margin-bottom:0; }
+  .side-col .net-formula{ grid-column:1 / -1; font-size:12.5px; color:var(--ink-dim); padding:12px 16px; }
+  .side-col .net-formula b{ color:var(--ink); font-family:'JetBrains Mono',monospace; }
+  .kpi .sub{ font-size:11px; letter-spacing:.1em; text-transform:uppercase; color:var(--ink-dim); font-weight:600; }
+  .kpi .amount{ font-family:'JetBrains Mono',monospace; font-size:20px; font-weight:700; margin-top:6px; }
+  .kpi.mts .amount{ color:var(--blue); } .kpi.privat .amount{ color:var(--purple); }
+  .kpi .hint{ font-size:11.5px; color:var(--faint); margin-top:2px; }
+  .warn-row{ margin-top:12px; font-size:12.5px; color:var(--amber); background:rgba(245,166,35,.08); border:1px solid rgba(245,166,35,.25); border-radius:10px; padding:8px 10px; display:flex; justify-content:space-between; gap:8px; }
+  .report-list{ display:flex; flex-direction:column; }
+  .report-link{ display:flex; justify-content:space-between; align-items:center; width:100%; background:none; border:none; border-top:1px solid var(--line); color:var(--ink); font-size:14.5px; font-family:'Inter',sans-serif; padding:13px 0; cursor:pointer; text-align:left; }
+  .report-link:first-child{ border-top:none; padding-top:4px; }
+  .report-link small{ color:var(--ink-dim); font-size:12px; margin-left:6px; }
+  .report-link .chev{ color:var(--faint); }
+  .report-link.accent{ color:var(--blue); }
+  .push-row{ border-top:1px solid var(--line); margin-top:4px; padding-top:12px; }
+  .entries-card td:first-child, .daily-card td:first-child{ white-space:nowrap; }
+  @media (max-width:899px){
+    .dash > .berichte-card{ order:20; }
+  }
+  @media (min-width:900px){
+    .filter-toggle{ display:none; }
+    .filter-panel, .filter-panel.open{ display:grid; grid-template-columns:1fr 1fr; gap:18px; align-items:start; }
+    .filter-panel .search-wrap{ margin-top:4px; }
+    .dash{ display:grid; grid-template-columns:repeat(12, minmax(0,1fr)); column-gap:16px; align-items:start; }
+    .dash > *{ grid-column:1 / -1; }
+    .dash > .hero{ grid-column:span 4; }
+    .dash > .apz-card{ grid-column:span 5; }
+    .dash > .side-col{ grid-column:span 3; grid-template-columns:1fr; }
+    .dash{ grid-auto-flow:row dense; }
+    .dash > .branch-card{ grid-column:1 / span 4; }
+    .dash > .berichte-card{ grid-column:1 / span 4; }
+    .dash > .summary-card{ grid-column:5 / span 8; grid-row:span 2; }
+    .dash > .daily-card{ grid-column:1 / -1; }
+    .dash > .entries-card{ order:10; }
+    .dash.dash-empty > *{ grid-column:1 / -1; }
+  }
+  /* ---- Mitarbeiterbericht (v7.2) ---- */
+  .only-desk{ display:none; }
+  .report-actions{ display:flex; gap:8px; flex-wrap:wrap; }
+  .rep-head{ display:flex; justify-content:space-between; align-items:flex-end; gap:12px; flex-wrap:wrap; }
+  .rep-month{ font-family:'Barlow Condensed',sans-serif; font-weight:700; font-size:24px; line-height:1.1; }
+  .month-nav{ display:flex; align-items:center; gap:6px; }
+  .month-nav input{ margin-bottom:0; padding:10px 12px; font-size:15px; width:auto; }
+  .month-nav .icon-btn{ width:40px; height:40px; font-size:18px; display:inline-flex; align-items:center; justify-content:center; padding:0; }
+  .rep-stats{ display:grid; grid-template-columns:repeat(2, minmax(0,1fr)); gap:10px; margin-top:16px; }
+  .rep-stats > div{ background:var(--steel-2); border:1px solid var(--line); border-radius:10px; padding:10px 12px; display:flex; flex-direction:column; gap:2px; }
+  .rep-stats > div:first-child{ grid-column:1 / -1; }
+  .rep-stats .k{ font-size:11px; color:var(--ink-dim); text-transform:uppercase; letter-spacing:.06em; font-weight:600; }
+  .rep-stats .v{ font-family:'JetBrains Mono',monospace; font-weight:700; font-size:17px; }
+  .rep-stats > div:first-child .v{ font-size:22px; color:var(--amber); }
+  .sort-chips{ display:flex; align-items:center; gap:6px; flex-wrap:wrap; margin-top:14px; }
+  .sort-label{ font-size:12px; color:var(--ink-dim); margin-right:2px; }
+  .rep-warn{ display:block; font-size:11.5px; color:var(--amber); margin-top:6px; }
+  .rep-note{ font-size:12px; color:var(--ink-dim); padding:0 4px 20px; line-height:1.5; }
+  .rep-table th.num, .rep-table td.num{ text-align:right; white-space:nowrap; }
+  .rep-table td.strong{ font-weight:700; }
+  .rep-table td .over{ color:var(--red); }
+  .rep-table td.cats{ font-family:'Inter',sans-serif; font-size:11.5px; color:var(--ink-dim); }
+  .rep-table .emp-cell .nm{ display:block; font-family:'Inter',sans-serif; font-weight:600; font-size:13px; }
+  .rep-table .emp-cell .ak{ display:block; font-size:11px; color:var(--ink-dim); }
+  .rep-table tfoot td{ font-weight:700; border-top:2px solid var(--line); border-bottom:none; }
+  @media (min-width:900px){
+    .only-mobile{ display:none; }
+    .only-desk{ display:block; }
+    .rep-stats{ grid-template-columns:repeat(5, minmax(0,1fr)); }
+    .rep-stats > div:first-child{ grid-column:auto; }
+  }
+  /* ---- Sürüm duyurusu (v7.2) ---- */
+  .announce{ padding:16px 20px 0; }
+  .announce-inner{ background:linear-gradient(135deg, rgba(245,166,35,0.10), rgba(111,163,216,0.08)); border:1px solid rgba(245,166,35,0.45); border-radius:14px; padding:16px 18px; }
+  .ann-eyebrow{ font-family:'JetBrains Mono',monospace; font-size:11px; letter-spacing:.12em; text-transform:uppercase; color:var(--amber); margin:0 0 6px; }
+  .ann-eyebrow .cross{ color:#7C8B9C; }
+  .ann-title{ font-family:'Barlow Condensed',sans-serif; font-weight:700; font-size:24px; line-height:1.1; margin-bottom:8px; }
+  .ann-list{ margin:0 0 12px; padding-left:18px; font-size:13.5px; color:var(--ink); line-height:1.5; }
+  .ann-list b{ color:var(--amber); font-weight:600; }
+  .ann-foot{ display:flex; align-items:center; justify-content:space-between; gap:12px; flex-wrap:wrap; }
+  .ann-hint{ font-size:12px; color:var(--ink-dim); }
+  .ann-ok{ background:var(--amber); color:#1B1E21; border:none; font-weight:700; font-size:14px; padding:10px 18px; border-radius:8px; cursor:pointer; }
+  .update-banner{ display:flex; align-items:center; justify-content:space-between; gap:12px; margin:12px 20px 0; padding:10px 14px; background:rgba(111,163,216,0.12); border:1px solid var(--blue); border-radius:10px; font-size:13.5px; }
+  .update-banner button{ background:var(--blue); color:#16181B; border:none; font-weight:700; padding:8px 14px; border-radius:8px; cursor:pointer; }
+  @media (min-width:900px){
+    .app:has(.layout-wide) .announce{ padding:20px 32px 0; }
+    .app:has(.layout-wide) .update-banner{ margin:12px 32px 0; }
+  }
+  /* ---- Mitarbeiter ekranı (v7.2) ---- */
+  .emp-hello{ padding:2px 2px 16px; }
+  .emp-hello .hello{ font-family:'Barlow Condensed',sans-serif; font-weight:700; font-size:26px; line-height:1.1; }
+  .emp-hello .hello-meta{ font-size:12px; color:var(--ink-dim); margin-top:4px; }
+  .emp-grid .col-main, .emp-grid .col-side{ display:contents; }
+  .emp-grid .emp-hours-card{ order:1; }
+  .emp-grid .emp-job-card{ order:2; }
+  .emp-grid .emp-entries-card{ order:3; }
+  .emp-grid .emp-monthly-btn{ order:4; }
+  .emp-grid{ display:flex; flex-direction:column; }
+  .emp-monthly-btn{ margin-bottom:14px; }
+  .hours-strip{ display:flex; align-items:center; justify-content:space-between; gap:10px; flex-wrap:wrap; background:rgba(76,195,138,0.10); border:1px solid rgba(76,195,138,0.35); border-radius:10px; padding:10px 12px; }
+  .hours-strip .hours-saved{ text-align:left; padding:0; }
+  .hours-actions{ display:flex; gap:8px; }
+  .hours-actions button.secondary{ width:auto; padding:8px 12px; font-size:13px; }
+  .job-list.branch-chips{ display:grid; grid-template-columns:repeat(3, minmax(0,1fr)); gap:8px; max-height:none; overflow:visible; }
+  .branch-chips .branch-btn{ justify-content:center; text-align:center; padding:12px 8px; }
+  .branch-chips .branch-btn .code{ font-family:'Inter',sans-serif; font-size:13px; }
+  .list-label{ font-size:11px; font-weight:600; color:var(--ink-dim); text-transform:uppercase; letter-spacing:.06em; margin:2px 0 8px; }
+  .freq-wrap{ margin-bottom:14px; }
+  .freq-grid{ display:grid; grid-template-columns:repeat(2, minmax(0,1fr)); gap:8px; }
+  .freq-tile{ background:rgba(111,163,216,0.08); border:1px solid rgba(111,163,216,0.35); color:var(--ink); border-radius:10px; padding:12px; cursor:pointer; display:flex; flex-direction:column; align-items:flex-start; gap:3px; text-align:left; font:inherit; }
+  .freq-tile .code{ font-family:'JetBrains Mono',monospace; font-weight:700; font-size:13px; overflow-wrap:anywhere; }
+  .freq-tile .job-price{ font-family:'JetBrains Mono',monospace; font-size:11.5px; color:var(--ink-dim); }
+  .freq-tile.selected{ border-color:var(--amber); background:rgba(245,166,35,0.12); }
+  .freq-tile.selected .code{ color:var(--amber); }
+  .job-list.job-grid{ display:grid; grid-template-columns:repeat(2, minmax(0,1fr)); gap:8px; max-height:420px; }
+  .job-grid .job-btn{ flex-direction:column; align-items:stretch; justify-content:flex-start; gap:4px; padding:11px 12px; }
+  .job-grid .job-btn .code{ font-size:13px; overflow-wrap:anywhere; }
+  .job-grid .job-btn .qty-count{ font-size:11px; }
+  .job-sheet.sheet-mode{ border-top:1px solid var(--line); margin-top:4px; padding-top:14px; }
+  .sheet-head{ display:flex; align-items:center; justify-content:space-between; gap:10px; margin-bottom:14px; }
+  .sheet-title{ display:flex; flex-direction:column; gap:2px; min-width:0; }
+  .sheet-title .code{ font-family:'JetBrains Mono',monospace; font-weight:700; color:var(--amber); overflow-wrap:anywhere; }
+  .sheet-title .job-price{ font-family:'JetBrains Mono',monospace; font-size:12px; color:var(--ink-dim); }
+  .sheet-close{ background:none; border:1px solid var(--line); color:var(--ink-dim); width:32px; height:32px; border-radius:8px; font-size:18px; line-height:1; cursor:pointer; flex:none; }
+  @media (min-width:900px){
+    .emp-grid:not(.emp-grid-admin){ display:grid; grid-template-columns:minmax(0,1fr) 400px; column-gap:20px; align-items:start; }
+    .emp-grid:not(.emp-grid-admin) .col-main, .emp-grid:not(.emp-grid-admin) .col-side{ display:block; }
+    .layout-wide .job-list.job-grid{ grid-template-columns:repeat(3, minmax(0,1fr)); max-height:520px; }
+    .layout-wide .freq-grid{ grid-template-columns:repeat(3, minmax(0,1fr)); }
+  }
   .range-chips{ display:flex; gap:8px; margin-bottom:14px; flex-wrap:wrap; }
   .range-chip{ background:var(--steel-2); border:1px solid var(--line); color:var(--ink-dim); font-size:12px; font-weight:600; padding:8px 12px; border-radius:20px; cursor:pointer; }
   .range-chip.active{ background:rgba(245,166,35,0.15); border-color:var(--amber); color:var(--amber); }
@@ -137,10 +300,11 @@
     :root{
       --graphite:#fff; --steel:#fff; --steel-2:#fff;
       --amber:#000; --green:#000; --red:#000; --blue:#000; --purple:#000;
-      --ink:#000; --ink-dim:#333; --line:#999;
+      --ink:#000; --ink-dim:#333; --faint:#555; --line:#999;
     }
     header, nav, .refresh, #pdfBtn, .del-btn, .range-chips, .search-wrap,
-    #adminBackdateCard, input, select, #employeeFilterSelect{ display:none !important; }
+    #adminBackdateCard, input, select, #employeeFilterSelect,
+    .no-print, .icon-btn, .filter-toggle, #announceWrap{ display:none !important; }
     body{ background:#fff; color:#000; }
     .card{ border:1px solid #999; break-inside:avoid; background:#fff; }
     .amount, .revenue-total, .stat .n{ color:#000 !important; }
@@ -152,6 +316,9 @@
     table{ font-size:10px !important; }
     th, td{ padding:4px 6px !important; }
     .print-hide-col{ display:none !important; }
+    .only-mobile{ display:none !important; }
+    .only-desk{ display:block !important; }
+    .rep-table .emp-cell .rep-warn{ display:none !important; }
   }
 </style>
 </head>
@@ -438,11 +605,17 @@ function jobPriceLabel(j, knownBranch){
   return fmtEur(j.price_eur || 0)
 }
 
-function jobFormHtml(prefix, qtyCounts, knownBranch){
+// opts.sheet: çalışan ekranı (v7.2) — form alanları, bir iş seçilene kadar
+// gizli bir "sheet" içinde durur; seçilince başlıkta iş kodu + fiyat ve
+// seçimi kaldıran × butonu görünür. Admin formu (bk) eskisi gibi açık kalır.
+function jobFormHtml(prefix, qtyCounts, knownBranch, opts){
   qtyCounts = qtyCounts || {}
+  opts = opts || {}
   return `
-    <input type="text" id="${prefix}JobSearch" placeholder="🔍 Hizmet suchen..." style="margin-bottom:10px;">
-    <div class="job-list" id="${prefix}JobList">
+    <input type="text" id="${prefix}JobSearch" placeholder="🔍 Auftragsart suchen…" style="margin-bottom:10px;">
+    <div class="freq-wrap" id="${prefix}FreqWrap" style="display:none;"></div>
+    <div class="list-label" id="${prefix}AllLabel" style="display:none;">Alle Auftragsarten</div>
+    <div class="job-list job-grid" id="${prefix}JobList">
       ${visibleJobTypes().map(j => `
         <div class="job-btn" data-id="${j.id}">
           <div class="job-btn-info">
@@ -452,6 +625,12 @@ function jobFormHtml(prefix, qtyCounts, knownBranch){
           ${j.is_quantity ? `<span class="qty-count">${qtyCounts[j.id]||0}× heute</span>` : ''}
         </div>`).join('')}
     </div>
+    <div class="job-sheet${opts.sheet ? ' sheet-mode' : ''}" id="${prefix}JobSheet"${opts.sheet ? ' style="display:none;"' : ''}>
+    ${opts.sheet ? `
+    <div class="sheet-head">
+      <div class="sheet-title"><span class="code" id="${prefix}SheetCode"></span><span class="job-price" id="${prefix}SheetPrice"></span></div>
+      <button type="button" class="sheet-close" id="${prefix}SheetClose" title="Auswahl aufheben">×</button>
+    </div>` : ''}
     <div id="${prefix}RefNoWrap">
       <label>AKT-Nummer oder Fahrgestellnummer</label>
       <input type="text" id="${prefix}RefNo" placeholder="z.B. AKT121212 oder WVW...">
@@ -544,6 +723,7 @@ function jobFormHtml(prefix, qtyCounts, knownBranch){
       <button type="button" class="secondary" id="${prefix}ExtraArbeitAddSlotBtn" style="margin-top:8px;">+ Weitere Extra Arbeit</button>
     </div>
     <button class="primary" id="${prefix}AddBtn" disabled>Auftrag hinzufügen</button>
+    </div>
   `
 }
 
@@ -600,12 +780,25 @@ function validateJobForm(prefix, getSelected, extraValid){
 
 function wireJobForm(prefix, getSelected, setSelected, extraValid){
   const $ = (id) => document.getElementById(prefix + id)
+  const sheetMode = !!$('SheetClose')
   $('JobList').querySelectorAll('.job-btn[data-id]').forEach(btn=>{
     btn.addEventListener('click', ()=>{
       $('JobList').querySelectorAll('.job-btn[data-id]').forEach(b=>b.classList.remove('selected'))
       btn.classList.add('selected')
       const jt = jobTypes.find(j => j.id === btn.dataset.id)
       setSelected(jt)
+      syncFreqSelected(prefix, jt.id)
+      if(sheetMode){
+        $('SheetCode').textContent = jt.code
+        $('SheetPrice').textContent = btn.querySelector('.job-price')?.textContent || ''
+        const wasHidden = $('JobSheet').style.display === 'none'
+        $('JobSheet').style.display = 'block'
+        // Mobilde form listenin altında kalıyor — seçimden sonra görünür
+        // alana kaydır. Geniş ekranda gerek yok (yan yana/üstte görünür).
+        if(wasHidden && window.matchMedia && window.matchMedia('(max-width:899px)').matches){
+          try { $('JobSheet').scrollIntoView({ behavior:'smooth', block:'nearest' }) } catch(e){}
+        }
+      }
       const showRef = !jt.is_quantity && jt.requires_ref !== false
       $('RefNoWrap').style.display = showRef ? 'block' : 'none'
       $('QtyWrap').style.display = jt.is_quantity ? 'block' : 'none'
@@ -655,6 +848,15 @@ function wireJobForm(prefix, getSelected, setSelected, extraValid){
   ;['PerformerSelect','MtsTypeSelect','ShowroomHoursSelect','ExtraArbeit1Select','ExtraArbeit2Select','ExtraArbeit3Select','ExtraArbeit4Select'].forEach(id=>{
     $(id).addEventListener('change', ()=>validateJobForm(prefix, getSelected, extraValid))
   })
+  if(sheetMode){
+    $('SheetClose').addEventListener('click', ()=>{
+      $('JobList').querySelectorAll('.job-btn[data-id]').forEach(b=>b.classList.remove('selected'))
+      syncFreqSelected(prefix, null)
+      setSelected(null)
+      $('JobSheet').style.display = 'none'
+      validateJobForm(prefix, getSelected, extraValid)
+    })
+  }
   $('ExtraArbeitAddSlotBtn').addEventListener('click', ()=>{
     if($('ExtraArbeit3Wrap').style.display === 'none'){
       $('ExtraArbeit3Wrap').style.display = 'block'
@@ -670,7 +872,72 @@ function wireJobForm(prefix, getSelected, setSelected, extraValid){
       const match = !q || (jt && jt.code.toLowerCase().includes(q))
       btn.style.display = match ? 'flex' : 'none'
     })
+    // Arama sırasında "Deine häufigsten" gizlenir — sonuçlar sadece listede.
+    const freq = $('FreqWrap'), allLabel = $('AllLabel')
+    if(freq && freq.dataset.has === '1'){
+      freq.style.display = q ? 'none' : ''
+      if(allLabel) allLabel.style.display = q ? 'none' : ''
+    }
   })
+}
+
+function syncFreqSelected(prefix, jobTypeId){
+  const freq = document.getElementById(prefix + 'FreqWrap')
+  if(!freq) return
+  freq.querySelectorAll('.freq-tile[data-freq-id]').forEach(t=>{
+    t.classList.toggle('selected', !!jobTypeId && t.dataset.freqId === jobTypeId)
+  })
+}
+
+// "Deine häufigsten": çalışanın son 30 gündeki en sık kullandığı iş tipleri.
+// Sadece görüntüleme kısayolu — tıklanınca listedeki asıl .job-btn'ye
+// tıklanmış gibi davranır (tüm form mantığı tek yerde kalır). Hata olursa
+// veya yeterli veri yoksa bölüm gizli kalır; ana ekranı asla bloklamaz.
+async function loadFreqJobTiles(prefix, employeeId){
+  const freq = document.getElementById(prefix + 'FreqWrap')
+  const list = document.getElementById(prefix + 'JobList')
+  if(!freq || !list) return
+  try {
+    const since = new Date(Date.now() - 30*24*60*60*1000).toISOString()
+    const { data, error } = await fetchAllRows(() => supabase.from('records').select('id, job_type_id, created_at').eq('employee_id', employeeId).gte('created_at', since).order('created_at', { ascending: false }))
+    if(error || !data || !freq.isConnected) return
+    // Adetli (Stück) işler tek seferde N satır olarak eklenir — aynı
+    // created_at'e sahip satırlar tek kullanım sayılır.
+    const counts = {}
+    const seen = new Set()
+    data.forEach(r=>{
+      const jt = jobTypes.find(j => j.id === r.job_type_id)
+      if(!jt) return
+      if(jt.is_quantity){
+        const key = r.job_type_id + '|' + r.created_at
+        if(seen.has(key)) return
+        seen.add(key)
+      }
+      counts[r.job_type_id] = (counts[r.job_type_id]||0) + 1
+    })
+    const top = Object.entries(counts)
+      .filter(([id]) => list.querySelector(`.job-btn[data-id="${id}"]`))
+      .sort((a,b) => b[1] - a[1])
+      .slice(0, 6)
+    if(top.length < 2) return
+    freq.innerHTML = `<div class="list-label">Deine häufigsten</div><div class="freq-grid">` + top.map(([id]) => {
+      const jt = jobTypes.find(j => j.id === id)
+      const priceTxt = list.querySelector(`.job-btn[data-id="${id}"] .job-price`)?.textContent || ''
+      return `<button type="button" class="freq-tile" data-freq-id="${id}"><span class="code">${jt.code}</span><span class="job-price">${priceTxt}</span></button>`
+    }).join('') + `</div>`
+    freq.dataset.has = '1'
+    const searching = !!document.getElementById(prefix + 'JobSearch')?.value.trim()
+    freq.style.display = searching ? 'none' : ''
+    const allLabel = document.getElementById(prefix + 'AllLabel')
+    if(allLabel) allLabel.style.display = searching ? 'none' : ''
+    freq.querySelectorAll('.freq-tile[data-freq-id]').forEach(tile=>{
+      tile.addEventListener('click', ()=>{
+        list.querySelector(`.job-btn[data-id="${tile.dataset.freqId}"]`)?.click()
+      })
+    })
+    const sel = list.querySelector('.job-btn.selected[data-id]')
+    if(sel) syncFreqSelected(prefix, sel.dataset.id)
+  } catch(e){ /* sadece kısayol — sessizce yok say */ }
 }
 
 function readJobFormValues(prefix, jt){
@@ -1065,6 +1332,89 @@ logoutBtn.addEventListener('click', async ()=>{
   renderLandingScreen()
 })
 
+// ============ SÜRÜM DUYURUSU + GÜNCELLEME KONTROLÜ ============
+// APP_VERSION ve kök dizindeki version.json HER ZAMAN birlikte
+// güncellenmeli. Duyuru, cihaz başına bir kez (localStorage) gösterilir ve
+// ekranı bloklamaz; localStorage erişilemezse hiç gösterilmez.
+const APP_VERSION = '7.2'
+const ANNOUNCE_SEEN_KEY = 'autowerk_seen_version'
+
+const ANNOUNCE_ITEMS = {
+  boss: [
+    'Chef-Panel neu: <b>APZ gesamt</b> (Aufbereitung + Smart Repair Lack, Delle, Text) mit Netto 75&nbsp;%',
+    'Mitarbeiterbericht mit <b>Umsatz</b>, Netto und Auslastung pro Mitarbeiter',
+    'Neue Auftragsart <b>Smart Repair Text</b>, Beschreibung bei SR-Lack / SR-Delle',
+    'Übersichtliche Ansicht auch am Computer'
+  ],
+  emp: [
+    'Schneller erfassen: <b>Deine häufigsten</b> Aufträge oben',
+    'Neue Auftragsart <b>Smart Repair Text</b>, Beschreibung bei SR-Lack / SR-Delle',
+    'Regiestunde mit AKT-Nummer und Notiz, bis zu 4 Extra Arbeiten',
+    'Übersichtliche Ansicht auch am Computer'
+  ]
+}
+
+function maybeShowAnnouncement(role){
+  let seen = null
+  try { seen = localStorage.getItem(ANNOUNCE_SEEN_KEY) } catch(e){ return }
+  if(seen === APP_VERSION) return
+  if(document.getElementById('announceWrap')) return
+  try { localStorage.setItem(ANNOUNCE_SEEN_KEY, APP_VERSION) } catch(e){ return }
+  const items = ANNOUNCE_ITEMS[role] || ANNOUNCE_ITEMS.emp
+  const el = document.createElement('div')
+  el.id = 'announceWrap'
+  el.className = 'announce'
+  el.innerHTML = `
+    <div class="announce-inner">
+      <p class="ann-eyebrow">autowerk.app <span class="cross">×</span> 2A1Z · Update</p>
+      <div class="ann-title">Version ${APP_VERSION} ist da</div>
+      <ul class="ann-list">${items.map(t => `<li>${t}</li>`).join('')}</ul>
+      <div class="ann-foot">
+        <span class="ann-hint">Fehlt etwas? Seite im Browser einmal neu laden.</span>
+        <button type="button" class="ann-ok" id="announceOkBtn">Alles klar</button>
+      </div>
+    </div>`
+  main.parentNode.insertBefore(el, main)
+  el.querySelector('#announceOkBtn').addEventListener('click', ()=> el.remove())
+}
+
+function compareVersions(a, b){
+  const pa = String(a).split('.').map(n => parseInt(n, 10) || 0)
+  const pb = String(b).split('.').map(n => parseInt(n, 10) || 0)
+  for(let i = 0; i < Math.max(pa.length, pb.length); i++){
+    const d = (pa[i] || 0) - (pb[i] || 0)
+    if(d) return d > 0 ? 1 : -1
+  }
+  return 0
+}
+
+// Uzun süre açık kalan sekmeler/PWA için: sunucudaki version.json daha
+// yeni bir sürüm bildiriyorsa üstte "Neu laden" bandı gösterilir. Dosya
+// yoksa (404) veya ağ hatasında sessizce hiçbir şey yapılmaz.
+let lastVersionCheck = 0
+function checkForNewVersion(){
+  const now = Date.now()
+  if(now - lastVersionCheck < 60*1000) return
+  lastVersionCheck = now
+  if(document.getElementById('updateBanner')) return
+  fetch('/version.json?t=' + now, { cache:'no-store' })
+    .then(r => r.ok ? r.json() : null)
+    .then(v => {
+      if(!v || !v.version || compareVersions(v.version, APP_VERSION) <= 0) return
+      if(document.getElementById('updateBanner')) return
+      const el = document.createElement('div')
+      el.id = 'updateBanner'
+      el.className = 'update-banner no-print'
+      el.innerHTML = `<span>Neue Version <b class="mono">${String(v.version).replace(/[^0-9.]/g,'')}</b> verfügbar</span><button type="button" id="updateReloadBtn">Neu laden</button>`
+      main.parentNode.insertBefore(el, main)
+      el.querySelector('#updateReloadBtn').addEventListener('click', ()=> location.reload())
+    })
+    .catch(()=>{})
+}
+document.addEventListener('visibilitychange', ()=>{ if(document.visibilityState === 'visible') checkForNewVersion() })
+window.addEventListener('focus', checkForNewVersion)
+setInterval(checkForNewVersion, 10*60*1000)
+
 // ============ ÇALIŞAN GİRİŞİ (TAGESANSICHT) ============
 
 async function renderEmployeeDay(){
@@ -1125,43 +1475,54 @@ async function renderEmployeeDay(){
     </div>
   ` : ''
 
+  const firstName = String(currentEmployee.name || '').trim().split(/\s+/)[0] || currentEmployee.name
+  const helloDate = new Date().toLocaleDateString('de-DE', { weekday:'short', day:'2-digit', month:'2-digit', year:'numeric' })
+
   main.innerHTML = `
-    <div class="card">
-      <label>Angemeldet als</label>
-      <div style="font-weight:600;font-size:16px;">${currentEmployee.name} (${currentEmployee.akt_no})</div>
+    <div class="emp-screen${isHiddenAdmin ? '' : ' layout-wide'}">
+    <div class="emp-hello">
+      <div class="hello">Hallo, ${firstName}</div>
+      <div class="hello-meta mono">${currentEmployee.akt_no} · ${helloDate}</div>
     </div>
 
-    <button class="secondary" id="monthlyReportBtn" style="margin-bottom:14px;">📅 Monatsbericht</button>
-
+    <div class="emp-grid${isHiddenAdmin ? ' emp-grid-admin' : ''}">
+    <div class="col-main">
     ${!isHiddenAdmin ? `
-    <div class="card">
-      <label>Wie viele Stunden hast du heute gearbeitet (ohne Pause)?</label>
+    <div class="card emp-job-card">
+      <label>Neuen Auftrag hinzufügen</label>
+      ${!savedBranch && !isBranchExempt ? `<div class="sub" style="color:var(--red);margin:-4px 0 14px;">⚠ Bitte zuerst oben deine Filiale für heute speichern.</div>` : ''}
+      ${jobFormHtml('emp', qtyCounts, savedBranch, { sheet: true })}
+    </div>
+    ` : ''}
+    </div>
+
+    <div class="col-side">
+    ${!isHiddenAdmin ? `
+    <div class="card emp-hours-card">
       ${savedHours !== null ? `
-        <div class="hours-saved">✓ Gespeichert: ${savedHours} Std · ${savedBranch || 'keine Filiale angegeben'}</div>
-        <div style="display:flex;gap:8px;margin-top:10px;">
-          <button class="secondary" id="editHoursBtn">Ändern</button>
-          <button class="secondary" id="deleteHoursBtn" style="color:var(--red);">Löschen</button>
+        <label>Arbeitszeit heute</label>
+        <div class="hours-strip">
+          <div class="hours-saved">✓ Gespeichert: ${savedHours} Std · ${savedBranch || 'keine Filiale angegeben'}</div>
+          <div class="hours-actions">
+            <button class="secondary" id="editHoursBtn">Ändern</button>
+            <button class="secondary" id="deleteHoursBtn" style="color:var(--red);">Löschen</button>
+          </div>
         </div>
       ` : `
+        <label>Wie viele Stunden hast du heute gearbeitet (ohne Pause)?</label>
         <div class="hours-row" style="margin-bottom:14px;">
           <input type="number" id="hoursInput" placeholder="z.B. 8.5" step="0.5" min="0" max="16">
         </div>
         <label>In welcher Filiale hast du heute gearbeitet?</label>
-        <div class="job-list" id="branchList" style="margin-bottom:14px;">
+        <div class="job-list branch-chips" id="branchList" style="margin-bottom:14px;">
           ${BRANCHES.map(b => `<div class="job-btn branch-btn" data-branch="${b}"><span class="code">${b}</span></div>`).join('')}
         </div>
         <button class="primary" id="saveHoursBtn" disabled>Speichern</button>
       `}
     </div>
-
-    <div class="card">
-      <label>Neuen Auftrag hinzufügen</label>
-      ${!savedBranch && !isBranchExempt ? `<div class="sub" style="color:var(--red);margin:-4px 0 14px;">⚠ Bitte zuerst oben deine Filiale für heute speichern.</div>` : ''}
-      ${jobFormHtml('emp', qtyCounts, savedBranch)}
-    </div>
     ` : ''}
 
-    <div class="card">
+    <div class="card emp-entries-card">
       <label>${todayLabel()} — Deine heutigen Einträge (${todaysRecords.length})</label>
       <div class="entry-list" id="entryList">
         ${todaysRecords.length === 0 ? '<div class="empty">Noch keine Einträge</div>' : todaysRecords.map(r => `
@@ -1182,8 +1543,14 @@ async function renderEmployeeDay(){
       </div>
     </div>
 
+    <button class="secondary emp-monthly-btn" id="monthlyReportBtn">📅 Monatsbericht</button>
+    </div>
+    </div>
+
     ${adminBackdateHtml}
+    </div>
   `
+  maybeShowAnnouncement(isHiddenAdmin ? 'boss' : 'emp')
 
   let pickedBranch = null
 
@@ -1235,6 +1602,7 @@ async function renderEmployeeDay(){
   if(!isHiddenAdmin){
     wireJobForm('emp', ()=>selectedJobType, (jt)=>{ selectedJobType = jt }, ()=>!!savedBranch || isBranchExempt)
     document.getElementById('empAddBtn').addEventListener('click', addRecord)
+    loadFreqJobTiles('emp', currentEmployee.id)
   }
   document.getElementById('monthlyReportBtn').addEventListener('click', ()=>renderEmployeeMonthlyReport())
   document.querySelectorAll('[data-del]').forEach(btn=>{
@@ -1482,17 +1850,32 @@ async function renderBossDashboard(){
   const allRecords = recordsRes.data || []
   const hours = hoursRes.data || []
 
+  // Bildirim ayarı artık "Berichte" kartının altında tek satır.
   const pushCardHtml = pushStatus === 'unsupported' ? '' : `
-    <div class="card">
+    <div class="push-row">
       ${pushStatus === 'subscribed'
-        ? '<div class="sub" style="color:var(--green);">✓ Tägliche Benachrichtigung (17:30) aktiv</div><button class="secondary" id="resetPushBtn" style="margin-top:10px;">🔄 Zurücksetzen</button>'
+        ? '<div class="sub" style="color:var(--green);font-size:13px;">✓ Tägliche Benachrichtigung (17:45) aktiv</div><button class="secondary" id="resetPushBtn" style="margin-top:10px;">🔄 Zurücksetzen</button>'
         : '<button class="secondary" id="enablePushBtn">🔔 Tägliche Benachrichtigung aktivieren</button>'}
     </div>
   `
 
+  // Filtre paneli (Suche + Filiale): mobilde "Filter" butonuyla açılır,
+  // bilgisayarda (>=900px) her zaman açık. Bir filtre aktifse mobilde de
+  // otomatik açık gelir ki kullanıcı neyin filtrelendiğini görsün.
+  const filtersActive = !!((bossRange.search || '').trim() || bossRange.branchFilter)
+  const filtersOpen = filtersActive || !!bossRange.filtersOpen
+  const rangeLabel = start === end ? formatDateDE(start) : formatDateDE(start).slice(0,6) + ' – ' + formatDateDE(end)
+  const filterSummary = [rangeLabel, bossRange.branchFilter || 'Alle Filialen', (bossRange.search || '').trim() ? '„' + bossRange.search.trim() + '“' : ''].filter(Boolean).join(' · ')
+
   const rangeHeaderHtml = `
-    <div class="card">
-      <label>Zeitraum</label>
+    <div class="card range-card">
+      <div class="range-top">
+        <label>Zeitraum</label>
+        <div class="range-actions">
+          <button class="icon-btn filter-toggle" id="filterToggleBtn">${filtersActive ? '<span class="dot"></span>' : ''}Filter</button>
+          <button class="icon-btn" id="refreshBtn" title="Aktualisieren">↻ Aktualisieren</button>
+        </div>
+      </div>
       <div class="range-chips">
         <div class="range-chip ${bossRange.mode==='today'?'active':''}" data-mode="today">Heute</div>
         <div class="range-chip ${bossRange.mode==='yesterday'?'active':''}" data-mode="yesterday">Gestern</div>
@@ -1505,19 +1888,35 @@ async function renderBossDashboard(){
           <div><label>Von</label><input type="date" id="rangeStart" value="${bossRange.start || start}"></div>
           <div><label>Bis</label><input type="date" id="rangeEnd" value="${bossRange.end || end}"></div>
         </div>
-        <button class="secondary" id="rangeApplyBtn">Bericht anzeigen</button>
-      ` : `<div class="sub" style="color:var(--ink-dim);font-size:12px;">${start === end ? start : start + ' – ' + end}</div>`}
-      <div class="search-wrap">
-        <label>Suche nach AKT-/Fahrgestellnummer</label>
-        <input type="text" id="searchInput" placeholder="z.B. AKT121212" value="${bossRange.search || ''}">
-      </div>
-      <div class="search-wrap">
-        <label>Filiale</label>
-        <div class="range-chips">
-          <div class="range-chip branch-chip ${!bossRange.branchFilter?'active':''}" data-branch="">Alle</div>
-          ${BRANCHES.map(b => `<div class="range-chip branch-chip ${bossRange.branchFilter===b?'active':''}" data-branch="${b}">${b}</div>`).join('')}
+        <button class="secondary" id="rangeApplyBtn" style="margin-top:12px;">Bericht anzeigen</button>
+      ` : `<div class="range-sub">${filterSummary}</div>`}
+      <div class="filter-panel ${filtersOpen ? 'open' : ''}" id="filterPanel">
+        <div class="search-wrap">
+          <label>Suche nach AKT-/Fahrgestellnummer</label>
+          <input type="text" id="searchInput" placeholder="z.B. AKT121212" value="${bossRange.search || ''}">
+        </div>
+        <div class="search-wrap">
+          <label>Filiale</label>
+          <div class="range-chips">
+            <div class="range-chip branch-chip ${!bossRange.branchFilter?'active':''}" data-branch="">Alle</div>
+            ${BRANCHES.map(b => `<div class="range-chip branch-chip ${bossRange.branchFilter===b?'active':''}" data-branch="${b}">${b}</div>`).join('')}
+          </div>
         </div>
       </div>
+    </div>
+  `
+
+  const reportsCardHtml = `
+    <div class="card berichte-card no-print">
+      <label>Berichte</label>
+      <div class="report-list">
+        <button class="report-link" id="empCatReportBtn">Mitarbeiterbericht <span class="chev">›</span></button>
+        <button class="report-link" id="branchCatReportBtn"><span>Filialbericht<small>Kategorien</small></span><span class="chev">›</span></button>
+        <button class="report-link" id="mtsProformaReportBtn">MTS Proforma <span class="chev">›</span></button>
+        <button class="report-link" id="privatkundenReportBtn">Privatkunden <span class="chev">›</span></button>
+        <button class="report-link accent" id="pdfBtn">Als PDF speichern <span class="chev">↓</span></button>
+      </div>
+      ${pushCardHtml}
     </div>
   `
 
@@ -1663,20 +2062,16 @@ async function renderBossDashboard(){
 
   if(allRecords.length === 0){
     main.innerHTML = `
-      <button class="refresh" id="refreshBtn">↻ Aktualisieren</button>
-      <button class="refresh" id="pdfBtn">📄 Als PDF speichern</button>
-      <button class="refresh" id="empCatReportBtn">👤 Mitarbeiter Raporu</button>
-      <button class="refresh" id="branchCatReportBtn">🏬 Şube Kategori Raporu</button>
-      <button class="refresh" id="mtsProformaReportBtn">🧾 MTS Proforma</button>
-      <button class="refresh" id="privatkundenReportBtn">👤 Privatkunden Raporu</button>
-      ${pushCardHtml}
-      ${rangeHeaderHtml}
-      <div class="card">
-        <label>Zusammenfassung pro Mitarbeiter</label>
-        ${employeeFilterHtml}
-        ${employeeFilter ? employeeSummaryHtml : '<div class="empty" style="padding:14px 0;">Mitarbeiter auswählen, um dessen Bericht unabhängig vom obigen Zeitraum zu sehen.</div>'}
-      </div>
-      <div class="empty"><p class="big">Keine Aufträge in diesem Zeitraum</p></div>`
+      <div class="dash dash-empty layout-wide">
+        ${rangeHeaderHtml}
+        <div class="card empty-card"><div class="empty"><p class="big">Keine Aufträge in diesem Zeitraum</p></div></div>
+        <div class="card summary-card">
+          <label>Zusammenfassung pro Mitarbeiter</label>
+          ${employeeFilterHtml}
+          ${employeeFilter ? employeeSummaryHtml : '<div class="empty" style="padding:14px 0;">Mitarbeiter auswählen, um dessen Bericht unabhängig vom obigen Zeitraum zu sehen.</div>'}
+        </div>
+        ${reportsCardHtml}
+      </div>`
     wireBossControls()
     return
   }
@@ -1760,11 +2155,11 @@ async function renderBossDashboard(){
     const days = Object.keys(byDate).sort()
     if(days.length){
       dailyBreakdownHtml = `
-        <div class="card">
+        <div class="card daily-card">
           <label>Tägliche Aufschlüsselung</label>
           <div class="table-wrap">
             <table>
-              <thead><tr><th>Datum</th><th>Normal</th><th>MTS</th><th>Privat</th>${BRANCHES.map(b=>`<th>${b}</th>`).join('')}<th>Gesamt</th></tr></thead>
+              <thead><tr><th>Datum</th><th>APZ</th><th>MTS</th><th>Privat</th>${BRANCHES.map(b=>`<th>${b}</th>`).join('')}<th>Gesamt</th></tr></thead>
               <tbody>
                 ${days.map(d=>{
                   const row = byDate[d]
@@ -1786,72 +2181,96 @@ async function renderBossDashboard(){
     }
   }
 
+  // --- Sadece görünüm için türetilen değerler (hesaplamaların kendisi
+  // yukarıda, değişmeden duruyor) ---
+  const netTotal = normalRevenue * 0.75 + mtsRevenue + privatRevenue
+  const mtsCount = records.filter(r => r.job_types.is_mts).length
+  const privatCount = records.filter(r => !r.job_types.is_mts && r.job_types.code === 'Privat').length
+  const pctOf = (v, t) => t > 0 ? Math.round(v / t * 100) : 0
+  const barW = (v, t) => t > 0 ? Math.max(0, Math.min(100, v / t * 100)) : 0
+  const apzRow = (label, value, meta, barClass) => `
+    <div class="revenue-box brk-row">
+      <div class="brk-top"><span class="sub">${label}</span><span class="amount">${fmtEur(value)}</span></div>
+      <div class="brk-meta"><span>${meta}</span><span class="net">Netto 75 %: ${fmtEur(value * 0.75)}</span></div>
+      <div class="hbar"><i class="${barClass}" style="width:${barW(value, normalRevenue)}%"></i></div>
+    </div>`
+
   main.innerHTML = `
-    <button class="refresh" id="refreshBtn">↻ Aktualisieren</button>
-    <button class="refresh" id="pdfBtn">📄 Als PDF speichern</button>
-    <button class="refresh" id="empCatReportBtn">👤 Mitarbeiter Raporu</button>
-    <button class="refresh" id="branchCatReportBtn">🏬 Şube Kategori Raporu</button>
-      <button class="refresh" id="mtsProformaReportBtn">🧾 MTS Proforma</button>
-      <button class="refresh" id="privatkundenReportBtn">👤 Privatkunden Raporu</button>
-    ${pushCardHtml}
-    ${rangeHeaderHtml}
-    <div class="card">
-      <div class="revenue-total">${fmtEur(totalRevenue)}</div>
-      <div class="revenue-total-net">Netto Umsatz: ${fmtEur(normalRevenue * 0.75 + mtsRevenue + privatRevenue)}</div>
-      <div class="revenue-split">
-        <div class="revenue-box">
+    <div class="dash layout-wide">
+      ${rangeHeaderHtml}
+
+      <div class="card hero">
+        <label>Umsatz gesamt</label>
+        <div class="revenue-total hero-total">${fmtEur(totalRevenue)}</div>
+        <div class="revenue-total-net">Netto <b>${fmtEur(netTotal)}</b> · ${records.length} Aufträge</div>
+        <div class="stackbar">
+          ${normalRevenue > 0 ? `<i class="c-apz" style="flex:${normalRevenue}"></i>` : ''}
+          ${mtsRevenue > 0 ? `<i class="c-mts" style="flex:${mtsRevenue}"></i>` : ''}
+          ${privatRevenue > 0 ? `<i class="c-privat" style="flex:${privatRevenue}"></i>` : ''}
+        </div>
+        <div class="legend">
+          <div><span class="sw c-apz"></span>APZ gesamt<b>${fmtEur(normalRevenue)}</b></div>
+          <div><span class="sw c-mts"></span>MTS<b>${fmtEur(mtsRevenue)}</b></div>
+          <div><span class="sw c-privat"></span>Privat<b>${fmtEur(privatRevenue)}</b></div>
+        </div>
+      </div>
+
+      <div class="card apz-card">
+        <div class="revenue-box apz-head">
+          <div class="sub">APZ gesamt</div>
+          <div class="apz-desc">Aufbereitung + Smart Repair (Lack, Delle, Text)</div>
           <div class="amount">${fmtEur(normalRevenue)}</div>
-          <div class="net">Netto (75%): ${fmtEur(normalRevenue * 0.75)}</div>
-          <div class="sub">APZ</div>
+          <div class="net">Netto 75 %: ${fmtEur(normalRevenue * 0.75)}</div>
         </div>
-        <div class="revenue-box">
-          <div class="amount">${fmtEur(lackRevenue)}</div>
-          <div class="net">Netto (75%): ${fmtEur(lackRevenue * 0.75)}</div>
-          <div class="sub">Lack</div>
-        </div>
-        <div class="revenue-box">
-          <div class="amount">${fmtEur(delleRevenue)}</div>
-          <div class="net">Netto (75%): ${fmtEur(delleRevenue * 0.75)}</div>
-          <div class="sub">Delle</div>
-        </div>
-        <div class="revenue-box">
-          <div class="amount">${fmtEur(aufbereitungRevenue)}</div>
-          <div class="net">Netto (75%): ${fmtEur(aufbereitungRevenue * 0.75)}</div>
-          <div class="sub">Aufbereitung</div>
-        </div>
-        <div class="revenue-box mts">
-          <div class="amount">${fmtEur(mtsRevenue)}</div>
+        <div class="davon">davon</div>
+        ${apzRow('Aufbereitung', aufbereitungRevenue, pctOf(aufbereitungRevenue, normalRevenue) + ' %', '')}
+        ${apzRow('Smart Repair · Lack', lackRevenue, pctOf(lackRevenue, normalRevenue) + ' % · inkl. Smart Repair Text', 'b1')}
+        ${apzRow('Smart Repair · Delle', delleRevenue, pctOf(delleRevenue, normalRevenue) + ' %', 'b2')}
+      </div>
+
+      <div class="side-col">
+        <div class="card kpi revenue-box mts">
           <div class="sub">MTS</div>
+          <div class="amount">${fmtEur(mtsRevenue)}</div>
+          <div class="hint">${mtsCount} Aufträge · ohne Abzug</div>
         </div>
-        <div class="revenue-box privat">
-          <div class="amount">${fmtEur(privatRevenue)}</div>
+        <div class="card kpi revenue-box privat">
           <div class="sub">Privatkunden</div>
+          <div class="amount">${fmtEur(privatRevenue)}</div>
+          <div class="hint">${privatCount} Aufträge · ohne Abzug</div>
+        </div>
+        <div class="card net-formula">Netto gesamt = APZ × 75 % + MTS + Privat = <b>${fmtEur(netTotal)}</b></div>
+      </div>
+
+      <div class="card branch-card">
+        <label>Umsatz nach Filiale</label>
+        ${BRANCHES.map(b => `
+          <div class="revenue-box brk-row">
+            <div class="brk-top"><span class="sub">${b}</span><span class="amount">${fmtEur(branchRevenue[b])}</span></div>
+            <div class="hbar"><i class="blue" style="width:${barW(branchRevenue[b], totalRevenue)}%"></i></div>
+          </div>`).join('')}
+        ${unassigned > 0 ? `<div class="warn-row"><span>⚠ Keine Filiale angegeben</span><span class="mono">${fmtEur(unassigned)}</span></div>` : ''}
+      </div>
+
+      <div class="card summary-card">
+        <label>Zusammenfassung pro Mitarbeiter</label>
+        ${employeeFilterHtml}
+        ${summaryHtml}
+      </div>
+
+      ${dailyBreakdownHtml}
+
+      ${reportsCardHtml}
+
+      <div class="card entries-card">
+        <label>Alle Einträge (${records.length})</label>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>Datum</th><th>Mitarbeiter</th><th>Auftrag</th><th>Nr.</th><th>Betrag</th></tr></thead>
+            <tbody>${rowsHtml}</tbody>
+          </table>
         </div>
       </div>
-    </div>
-    <div class="card">
-      <label>Umsatz nach Filiale</label>
-      <div class="revenue-split">
-        ${BRANCHES.map(b => `
-          <div class="revenue-box">
-            <div class="amount" style="color:var(--ink);font-size:16px;">${fmtEur(branchRevenue[b])}</div>
-            <div class="sub">${b}</div>
-          </div>`).join('')}
-      </div>
-      ${unassigned > 0 ? `<div class="sub" style="margin-top:10px;text-align:center;">Keine Filiale angegeben: ${fmtEur(unassigned)}</div>` : ''}
-    </div>
-    ${dailyBreakdownHtml}
-    <div class="card">
-      <label>Zusammenfassung pro Mitarbeiter</label>
-      ${employeeFilterHtml}
-      ${summaryHtml}
-    </div>
-    <div class="card">
-      <label>Alle Einträge (${records.length})</label>
-      <table>
-        <thead><tr><th>Datum</th><th>Mitarbeiter</th><th>Auftrag</th><th>Nr.</th><th>Betrag</th></tr></thead>
-        <tbody>${rowsHtml}</tbody>
-      </table>
     </div>
   `
   wireBossControls()
@@ -1861,6 +2280,21 @@ async function renderBossDashboard(){
 // Aylık, çalışan başına: toplam saat + kategori bazlı iş sayısı (GW/NW/
 // SW/Foto/MTS/SR/Privat/Sonstiges — bkz. job_types.category, schema_v24.sql).
 // AKT/şasi numarası GÖSTERİLMEZ, sadece sayım.
+// v7.2: her çalışan için ayrıca Umsatz (recordPrice — ana panelle aynı
+// hesap), Netto (APZ × 75 %, MTS/Privat %100), Regiestunden ve Auslastung
+// (ana paneldeki "Kapazität" ile aynı formül). Mobilde kart, bilgisayarda
+// ve PDF'te tablo. Fotoservice kayıtları zaten sahibinin (A3A/W1S/H1A)
+// kaydı olarak tutulduğu için ayrıca yeniden atama yapılmaz.
+let empReportSort = 'umsatz'
+
+function shiftMonthStr(monthStr, delta){
+  let [y, m] = monthStr.split('-').map(Number)
+  m += delta
+  while(m < 1){ m += 12; y -= 1 }
+  while(m > 12){ m -= 12; y += 1 }
+  return `${y}-${String(m).padStart(2,'0')}`
+}
+
 async function renderEmployeeCategoryReport(monthStr){
   main.innerHTML = `<div class="empty">Lädt...</div>`
   monthStr = monthStr || todayStr().slice(0,7)
@@ -1874,59 +2308,178 @@ async function renderEmployeeCategoryReport(monthStr){
   const lastDay = new Date(y, m, 0).getDate()
   const endDate = `${monthStr}-${String(lastDay).padStart(2,'0')}`
 
+  // recordPrice() için job_types.price_eur + is_variable_price ZORUNLU.
   const [recordsRes, hoursRes] = await Promise.all([
-    fetchAllRows(() => supabase.from('records').select('*, employees(name, akt_no), job_types(category)').gte('created_at', startOfDayISO(startDate)).lt('created_at', endOfDayISO(endDate))),
-    supabase.from('daily_hours').select('*, employees(name, akt_no)').gte('work_date', startDate).lte('work_date', endDate)
+    fetchAllRows(() => supabase.from('records').select('*, employees(name, akt_no), job_types(category, code, is_mts, price_eur, is_variable_price, duration_minutes)').gte('created_at', startOfDayISO(startDate)).lt('created_at', endOfDayISO(endDate)).order('id')),
+    fetchAllRows(() => supabase.from('daily_hours').select('*, employees(name, akt_no)').gte('work_date', startDate).lte('work_date', endDate).order('id'))
   ])
+  if(recordsRes.error || hoursRes.error){
+    main.innerHTML = `<button class="refresh" id="backToBossBtn">← Zurück</button><div class="card"><div class="empty">Fehler beim Laden: ${(recordsRes.error || hoursRes.error).message}</div></div>`
+    document.getElementById('backToBossBtn').addEventListener('click', renderBossDashboard)
+    return
+  }
   const records = recordsRes.data || []
   const hoursRows = hoursRes.data || []
 
+  const fotoOwners = new Set(Object.values(BRANCH_FOTOSERVICE_OWNER))
   const byEmp = {}
   function ensure(akt, name){
-    if(!byEmp[akt]) byEmp[akt] = { name, hours: 0, categories: {} }
+    if(!byEmp[akt]) byEmp[akt] = { akt, name, hours: 0, hasHours: false, count: 0, nonFotoCount: 0, revenue: 0, net: 0, regie: 0, workedMinutes: 0, categories: {} }
     return byEmp[akt]
   }
   hoursRows.forEach(h=>{
+    if(!h.employees) return
     const e = ensure(h.employees.akt_no, h.employees.name)
-    e.hours += Number(h.hours)
+    e.hours += Number(h.hours) || 0
+    e.hasHours = true
   })
   records.forEach(r=>{
+    if(!r.employees || !r.job_types) return
     const e = ensure(r.employees.akt_no, r.employees.name)
     const cat = r.job_types.category || 'Sonstiges'
     e.categories[cat] = (e.categories[cat] || 0) + 1
+    e.count += 1
+    if(r.job_types.code !== 'FOTOSERVICE') e.nonFotoCount += 1
+    const price = recordPrice(r)
+    e.revenue += price
+    // Ana paneldeki kova mantığıyla aynı: MTS ve Privat %100, geri kalan
+    // (APZ) %75.
+    e.net += (r.job_types.is_mts || r.job_types.code === 'Privat') ? price : price * 0.75
+    e.regie += Number(r.regiestunde) || 0
+    e.workedMinutes += (r.job_types.duration_minutes || 0) + (r.regiestunde||0)*60 + (r.custom_duration_minutes||0) + (r.extra_arbeit_minutes||0)
   })
 
-  const aktNos = Object.keys(byEmp).sort((a,b)=> byEmp[b].hours - byEmp[a].hours)
+  const list = Object.values(byEmp).map(e => {
+    e.hours = Math.round(e.hours * 100) / 100
+    e.regie = Math.round(e.regie * 100) / 100
+    e.isCollective = e.akt === 'SmartRepair'
+    e.capPct = (!e.isCollective && e.hours > 0) ? Math.round((e.workedMinutes / (e.hours * 60)) * 100) : null
+    e.warn = e.isCollective ? '' :
+      (e.hasHours && e.count === 0) ? 'Stunden erfasst, aber keine Aufträge' :
+      (!e.hasHours && e.nonFotoCount > 0) ? 'Aufträge ohne erfasste Stunden' : ''
+    return e
+  })
+  const tot = list.reduce((t, e) => ({ revenue: t.revenue + e.revenue, net: t.net + e.net, count: t.count + e.count, hours: t.hours + e.hours, regie: t.regie + e.regie }), { revenue: 0, net: 0, count: 0, hours: 0, regie: 0 })
+  tot.hours = Math.round(tot.hours * 100) / 100
+  tot.regie = Math.round(tot.regie * 100) / 100
+  const anyOwnerFoto = list.some(e => fotoOwners.has(e.akt) && e.categories['Foto'])
+
+  const monthLabel = new Date(y, m - 1, 1).toLocaleDateString('de-DE', { month: 'long', year: 'numeric' })
+  const SORTS = [['umsatz','Umsatz'], ['auftraege','Aufträge'], ['stunden','Stunden'], ['name','Name']]
+
+  function sorted(){
+    const arr = list.slice()
+    if(empReportSort === 'auftraege') arr.sort((a,b) => b.count - a.count || b.revenue - a.revenue)
+    else if(empReportSort === 'stunden') arr.sort((a,b) => b.hours - a.hours || b.revenue - a.revenue)
+    else if(empReportSort === 'name') arr.sort((a,b) => String(a.name).localeCompare(String(b.name), 'de'))
+    else arr.sort((a,b) => b.revenue - a.revenue || b.hours - a.hours)
+    return arr
+  }
+  function catsText(e){
+    const keys = Object.keys(e.categories).sort((a,b)=> categorySortIndex(a) - categorySortIndex(b))
+    if(!keys.length) return 'Keine Aufträge'
+    return keys.map(c => `${c}: ${e.categories[c]}${c === 'Foto' && fotoOwners.has(e.akt) ? '*' : ''}`).join(' · ')
+  }
+  function hoursText(e){ return e.isCollective ? 'Sammelkonto' : `${e.hours} Std` }
+  function capHtml(e){
+    if(e.capPct === null) return ''
+    return `<div class="cap-bar"><div class="cap-fill ${e.capPct>100?'over':''}" style="width:${Math.min(e.capPct,100)}%;"></div></div>
+      <div class="sub" style="margin-top:4px;">Auslastung ${e.capPct} %</div>`
+  }
+  function cardsHtml(arr){
+    return arr.map(e => `
+      <div class="summary-row rep-card">
+        <div class="top-row">
+          <div>
+            <div class="name">${e.name}</div>
+            <div class="sub">${e.akt} · ${hoursText(e)} · ${e.count} Aufträge${e.regie ? ` · Regie ${e.regie} Std` : ''}</div>
+          </div>
+          <div class="stat">
+            <span class="n">${fmtEur(e.revenue)}</span>
+            <span class="label">Netto ${fmtEur(e.net)}</span>
+          </div>
+        </div>
+        ${capHtml(e)}
+        <div class="sub" style="margin-top:6px;">${catsText(e)}</div>
+        ${e.warn ? `<div class="rep-warn">⚠ ${e.warn}</div>` : ''}
+      </div>`).join('')
+  }
+  function tableHtml(arr){
+    return `
+      <div class="table-wrap">
+        <table class="rep-table">
+          <thead><tr><th>Mitarbeiter</th><th class="num">Std</th><th class="num">Aufträge</th><th class="num">Regie Std</th><th>Kategorien</th><th class="num">Umsatz</th><th class="num">Netto</th><th class="num">Auslastung</th></tr></thead>
+          <tbody>${arr.map(e => `
+            <tr>
+              <td class="emp-cell"><span class="nm">${e.name}</span><span class="ak">${e.akt}</span>${e.warn ? `<span class="rep-warn">⚠ ${e.warn}</span>` : ''}</td>
+              <td class="num">${e.isCollective ? '–' : e.hours}</td>
+              <td class="num">${e.count}</td>
+              <td class="num">${e.regie || '–'}</td>
+              <td class="cats">${catsText(e)}</td>
+              <td class="num strong">${fmtEur(e.revenue)}</td>
+              <td class="num">${fmtEur(e.net)}</td>
+              <td class="num">${e.capPct === null ? '–' : `<span class="${e.capPct>100?'over':''}">${e.capPct} %</span>`}</td>
+            </tr>`).join('')}
+          </tbody>
+          <tfoot><tr>
+            <td>Gesamt</td><td class="num">${tot.hours}</td><td class="num">${tot.count}</td><td class="num">${tot.regie || '–'}</td><td></td>
+            <td class="num strong">${fmtEur(tot.revenue)}</td><td class="num">${fmtEur(tot.net)}</td><td></td>
+          </tr></tfoot>
+        </table>
+      </div>`
+  }
 
   main.innerHTML = `
-    <button class="refresh" id="backToBossBtn">← Zurück</button>
-    <button class="refresh" id="pdfBtn">📄 Als PDF speichern</button>
-    <div class="card">
-      <label style="margin-top:0;">Monat wählen</label>
-      <input type="month" id="empCatMonthInput" value="${monthStr}">
-    </div>
-    <div class="card">
-      <label>Mitarbeiter Raporu — ${monthStr}</label>
-      ${aktNos.length === 0 ? '<div class="empty">Keine Daten in diesem Monat</div>' : aktNos.map(akt=>{
-        const e = byEmp[akt]
-        const catKeys = Object.keys(e.categories).sort((a,b)=> categorySortIndex(a) - categorySortIndex(b))
-        return `
-          <div class="summary-row">
-            <div class="top-row">
-              <div>
-                <div class="name">${e.name}</div>
-                <div class="sub">${akt} · ${e.hours} Std</div>
-              </div>
-            </div>
-            <div class="sub" style="margin-top:6px;">${catKeys.length ? catKeys.map(c=>`${c}: ${e.categories[c]}`).join(' · ') : 'Keine Aufträge'}</div>
+    <div class="report-screen layout-wide">
+      <div class="report-actions">
+        <button class="refresh" id="backToBossBtn">← Zurück</button>
+        <button class="refresh" id="pdfBtn">📄 Als PDF speichern</button>
+      </div>
+      <div class="card rep-head-card">
+        <div class="rep-head">
+          <div>
+            <label style="margin-bottom:4px;">Mitarbeiterbericht</label>
+            <div class="rep-month">${monthLabel}</div>
           </div>
-        `
-      }).join('')}
+          <div class="month-nav">
+            <button type="button" class="icon-btn" id="empCatPrevBtn" title="Vorheriger Monat">‹</button>
+            <input type="month" id="empCatMonthInput" value="${monthStr}">
+            <button type="button" class="icon-btn" id="empCatNextBtn" title="Nächster Monat">›</button>
+          </div>
+        </div>
+        ${list.length ? `
+        <div class="rep-stats">
+          <div><span class="k">Umsatz</span><span class="v">${fmtEur(tot.revenue)}</span></div>
+          <div><span class="k">Netto</span><span class="v">${fmtEur(tot.net)}</span></div>
+          <div><span class="k">Aufträge</span><span class="v">${tot.count}</span></div>
+          <div><span class="k">Stunden</span><span class="v">${tot.hours}</span></div>
+          <div><span class="k">Regiestunden</span><span class="v">${tot.regie}</span></div>
+        </div>
+        <div class="sort-chips no-print">
+          <span class="sort-label">Sortieren:</span>
+          ${SORTS.map(([k, l]) => `<button type="button" class="range-chip sort-chip ${empReportSort === k ? 'active' : ''}" data-sort="${k}">${l}</button>`).join('')}
+        </div>` : ''}
+      </div>
+      ${list.length === 0 ? '<div class="card"><div class="empty">Keine Daten in diesem Monat</div></div>' : `
+      <div class="card only-mobile" id="empRepCards">${cardsHtml(sorted())}</div>
+      <div class="card only-desk" id="empRepTable">${tableHtml(sorted())}</div>
+      <div class="rep-note">Netto = APZ × 75 % · MTS und Privat ohne Abzug. Auslastung = erfasste Arbeitszeit der Aufträge ÷ Anwesenheit.${anyOwnerFoto ? ' * Fotoservice wird automatisch dem Filialverantwortlichen zugeordnet.' : ''}${list.some(e => e.isCollective) ? ' SmartRepair = Sammelkonto (ohne Stunden).' : ''}</div>`}
     </div>
   `
   document.getElementById('backToBossBtn').addEventListener('click', renderBossDashboard)
-  document.getElementById('empCatMonthInput').addEventListener('change', (e)=>renderEmployeeCategoryReport(e.target.value))
+  document.getElementById('empCatMonthInput').addEventListener('change', (e)=>{ if(e.target.value) renderEmployeeCategoryReport(e.target.value) })
+  document.getElementById('empCatPrevBtn').addEventListener('click', ()=>renderEmployeeCategoryReport(shiftMonthStr(monthStr, -1)))
+  document.getElementById('empCatNextBtn').addEventListener('click', ()=>renderEmployeeCategoryReport(shiftMonthStr(monthStr, 1)))
   document.getElementById('pdfBtn').addEventListener('click', ()=>window.print())
+  document.querySelectorAll('.sort-chip[data-sort]').forEach(btn=>{
+    btn.addEventListener('click', ()=>{
+      empReportSort = btn.dataset.sort
+      document.querySelectorAll('.sort-chip[data-sort]').forEach(b=>b.classList.toggle('active', b === btn))
+      const arr = sorted()
+      document.getElementById('empRepCards').innerHTML = cardsHtml(arr)
+      document.getElementById('empRepTable').innerHTML = tableHtml(arr)
+    })
+  })
 }
 
 // ============ ŞEF PANELİ — ŞUBE BAŞINA KATEGORİ RAPORU ============
@@ -2113,7 +2666,14 @@ async function renderPrivatkundenReport(monthStr){
 }
 
 function wireBossControls(){
+  maybeShowAnnouncement('boss')
   document.getElementById('refreshBtn')?.addEventListener('click', renderBossDashboard)
+  document.getElementById('filterToggleBtn')?.addEventListener('click', ()=>{
+    const panel = document.getElementById('filterPanel')
+    if(!panel) return
+    bossRange.filtersOpen = !panel.classList.contains('open')
+    panel.classList.toggle('open', bossRange.filtersOpen)
+  })
   document.getElementById('enablePushBtn')?.addEventListener('click', enablePushNotifications)
   document.getElementById('resetPushBtn')?.addEventListener('click', resetPushSubscription)
   document.querySelectorAll('.range-chip[data-mode]').forEach(chip=>{
