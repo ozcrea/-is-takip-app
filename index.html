@@ -188,6 +188,9 @@ const FOTOSERVICE_JOB_CODES = ['GW-A', 'GW-B', 'GW-FR', 'VFW-W1', 'VFW-W2']
 // tek farkı gelirinin Dashboard'da MTS/Privat'a değil, "Lack" bucket'ına
 // yazılması (bkz. renderBossDashboard).
 const TEXT_STYLE_CODES = ['Text Aufbereitung', 'Smart Repair Text']
+// Beschreibung sadece Text Aufbereitung'da zorunlu — Smart Repair Text'te
+// isteğe bağlı (Dauer ikisinde de zorunlu kalır).
+const TEXT_REQUIRED_DESC_CODES = ['Text Aufbereitung']
 // SR-Lack/SR-Delle için opsiyonel Beschreibung notu — Text Aufbereitung'ın
 // tersine ZORUNLU değil, sadece ek bilgi.
 const SR_NOTE_CODES = ['SR-Lack', 'SR-Delle']
@@ -584,7 +587,8 @@ function validateJobForm(prefix, getSelected, extraValid){
     }
     if(TEXT_STYLE_CODES.includes(jt.code)){
       const durVal = $('TextDurationInput').value
-      ok = ok && !!$('TextDescriptionInput').value.trim() && durVal && parseFloat(durVal) > 0
+      ok = ok && durVal && parseFloat(durVal) > 0
+      if(TEXT_REQUIRED_DESC_CODES.includes(jt.code)) ok = ok && !!$('TextDescriptionInput').value.trim()
     }
     // Not: aynı Extra Arbeit birden fazla slotta seçilebilir (ör.
     // "Ausbesserung Kratzer, Steinschlag pro Bauteil" iki farklı Bauteil'e
@@ -2418,7 +2422,8 @@ function renderBkRecordEditForm(r){
     }
     if(TEXT_STYLE_CODES.includes(jt.code)){
       const dur = $('Duration')?.value
-      ok = ok && !!$('Desc')?.value.trim() && dur && parseFloat(dur) > 0
+      ok = ok && dur && parseFloat(dur) > 0
+      if(TEXT_REQUIRED_DESC_CODES.includes(jt.code)) ok = ok && !!$('Desc')?.value.trim()
     }
     // Not: aynı Extra Arbeit birden fazla slotta seçilebilir (bkz. add
     // formundaki aynı gerekçe) — bilerek engellenmiyor.
@@ -2525,8 +2530,9 @@ function renderBkRecordEditForm(r){
     if(TEXT_STYLE_CODES.includes(jt.code)){
       const desc = $('Desc')?.value.trim()
       const dur = $('Duration')?.value
-      if(!desc || !dur || parseFloat(dur) <= 0){ showToast('Bitte Beschreibung und Dauer ausfüllen'); return }
-      payload.custom_description = desc
+      if(TEXT_REQUIRED_DESC_CODES.includes(jt.code) && !desc){ showToast('Bitte Beschreibung ausfüllen'); return }
+      if(!dur || parseFloat(dur) <= 0){ showToast('Bitte Dauer ausfüllen'); return }
+      payload.custom_description = desc || null
       payload.custom_duration_minutes = parseInt(dur)
     }
     if(SR_NOTE_CODES.includes(jt.code)) payload.custom_description = $('SRNote')?.value.trim() || null
