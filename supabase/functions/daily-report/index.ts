@@ -196,9 +196,20 @@ async function sendToAllSubscriptions(
   title: string,
   body: string,
 ) {
-  const { data: subs } = await supabase.from("push_subscriptions").select("*")
+  // Tagesbericht (Umsatz) NUR an Chef/Admin-Geräte (audience = 'boss',
+  // schema_v37.sql) — Mitarbeiter-Geräte ('emp') bekommen nur Mitteilungen.
+  // Falls schema_v37.sql noch nicht ausgeführt wurde (Spalte fehlt), wie
+  // bisher an alle senden — so bricht der 17:45-Bericht nie wegen der
+  // Reihenfolge der Updates ab (vor v37 gibt es ohnehin nur Chef-Geräte).
+  // Andere Fehler fallen NICHT auf "alle" zurück (sonst könnten
+  // Mitarbeiter-Geräte den Umsatz sehen) — dann wird nichts gesendet.
+  let { data: subs, error: subsError } = await supabase.from("push_subscriptions").select("*").eq("audience", "boss")
+  if (subsError) {
+    const columnMissing = subsError.code === "42703" || /audience/i.test(subsError.message || "")
+    subs = columnMissing ? (await supabase.from("push_subscriptions").select("*")).data : []
+  }
   webpush.setVapidDetails("mailto:kontakt@autowerk.app", VAPID_PUBLIC_KEY, VAPID_PRIVATE_KEY)
-  const payload = JSON.stringify({ title, body })
+  const payload = JSON.stringify({ title, body, url: "/" })
   return Promise.allSettled(
     (subs ?? []).map(async (sub: any) => {
       try {
