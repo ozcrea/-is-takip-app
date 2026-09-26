@@ -574,10 +574,10 @@ function validateJobForm(prefix, getSelected, extraValid){
       const durVal = $('TextDurationInput').value
       ok = ok && !!$('TextDescriptionInput').value.trim() && durVal && parseFloat(durVal) > 0
     }
-    if(jt.allows_extra_arbeit){
-      const chosen = [$('ExtraArbeit1Select').value, $('ExtraArbeit2Select').value, $('ExtraArbeit3Select').value, $('ExtraArbeit4Select').value].filter(Boolean)
-      if(new Set(chosen).size !== chosen.length) ok = false
-    }
+    // Not: aynı Extra Arbeit birden fazla slotta seçilebilir (ör.
+    // "Ausbesserung Kratzer, Steinschlag pro Bauteil" iki farklı Bauteil'e
+    // uygulanabilir) — bilerek engellenmiyor, fiyat/süre her seçim için
+    // ayrı ayrı toplanıyor (bkz. insertJobRecord).
   }
   $('AddBtn').disabled = !(ok && extraOk)
 }
@@ -2400,10 +2400,8 @@ function renderBkRecordEditForm(r){
       const dur = $('Duration')?.value
       ok = ok && !!$('Desc')?.value.trim() && dur && parseFloat(dur) > 0
     }
-    if(jt.allows_extra_arbeit){
-      const chosen = [$('Extra1')?.value, $('Extra2')?.value, $('Extra3')?.value, $('Extra4')?.value].filter(Boolean)
-      if(new Set(chosen).size !== chosen.length) ok = false
-    }
+    // Not: aynı Extra Arbeit birden fazla slotta seçilebilir (bkz. add
+    // formundaki aynı gerekçe) — bilerek engellenmiyor.
     const saveBtn = document.getElementById(`bkEditSave-${r.id}`)
     if(saveBtn) saveBtn.disabled = !ok
   }
