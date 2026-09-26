@@ -172,6 +172,20 @@
     .dash > .entries-card{ order:10; }
     .dash.dash-empty > *{ grid-column:1 / -1; }
   }
+  /* ---- Push-Mitteilungen ---- */
+  .emp-push-wrap{ margin-bottom:14px; }
+  .emp-push-row{ display:flex; align-items:center; justify-content:space-between; gap:10px; padding:10px 4px; font-size:13px; }
+  .emp-push-row .ok{ color:var(--green); }
+  .emp-push-hint{ font-size:11.5px; color:var(--ink-dim); margin-top:6px; padding:0 2px; }
+  .announce-send{ border-top:1px solid var(--line); margin-top:12px; padding-top:12px; }
+  .announce-send summary{ cursor:pointer; font-weight:600; font-size:14px; color:var(--amber); list-style:none; }
+  .announce-send summary::-webkit-details-marker{ display:none; }
+  .announce-send .as-group{ margin-top:12px; }
+  .announce-send .as-check{ display:flex; align-items:center; gap:8px; text-transform:none; letter-spacing:0; font-size:13px; color:var(--ink); margin-bottom:6px; }
+  .announce-send .as-check input{ width:auto; margin:0; }
+  .announce-send input[type=text]{ margin-bottom:6px; padding:10px 12px; font-size:14px; }
+  .announce-send textarea{ width:100%; background:var(--steel-2); border:1px solid var(--line); color:var(--ink); font-family:'Inter',sans-serif; font-size:13.5px; padding:10px 12px; border-radius:8px; resize:vertical; }
+  .announce-send .as-note{ font-size:11.5px; color:var(--ink-dim); margin:8px 0 10px; }
   /* ---- Mitarbeiterbericht (v7.2) ---- */
   .only-desk{ display:none; }
   .report-actions{ display:flex; gap:8px; flex-wrap:wrap; }
@@ -1415,6 +1429,89 @@ document.addEventListener('visibilitychange', ()=>{ if(document.visibilityState 
 window.addEventListener('focus', checkForNewVersion)
 setInterval(checkForNewVersion, 10*60*1000)
 
+// ============ PUSH-MITTEILUNGEN (Mitarbeiter-Opt-in + Admin-Versand) ============
+// Mitarbeiter: "Mitteilungen aktivieren" (audience 'emp') — bekommen nur
+// Mitteilungen wie Updates, NIE den 17:45-Tagesbericht mit Umsatz.
+async function renderEmpPushRow(){
+  const wrap = document.getElementById('empPushWrap')
+  if(!wrap) return
+  let status = 'unsupported'
+  try { status = await getPushSubscriptionStatus() } catch(e){ return }
+  if(!wrap.isConnected || status === 'unsupported') return
+  wrap.innerHTML = status === 'subscribed'
+    ? `<div class="emp-push-row"><span class="ok">✓ Mitteilungen aktiv</span><button class="icon-btn" id="empPushResetBtn">Zurücksetzen</button></div>`
+    : `<button class="secondary" id="empPushBtn">🔔 Mitteilungen aktivieren</button>
+       <div class="emp-push-hint">Nur wichtige Hinweise, z. B. neue Versionen. iPhone: App zuerst zum Home-Bildschirm hinzufügen.</div>`
+  document.getElementById('empPushBtn')?.addEventListener('click', ()=>enablePushNotifications('emp'))
+  document.getElementById('empPushResetBtn')?.addEventListener('click', ()=>resetPushSubscription('emp'))
+}
+
+// Admin (is_admin + hidden_from_login — NICHT Chef) kann eine einmalige
+// Mitteilung senden; die Edge Function prüft die Admin-Rolle zusätzlich
+// serverseitig (send-announcement).
+const ANNOUNCE_PUSH_TEMPLATES = {
+  boss: { title: `autowerk.app · Version ${APP_VERSION}`, body: 'Neue Auswertungen verfügbar: APZ gesamt, Umsatz pro Mitarbeiter und Netto-Übersicht. Tippen zum Aktualisieren.' },
+  emp:  { title: `autowerk.app · Version ${APP_VERSION}`, body: 'Neue Version verfügbar: schnellere Auftragserfassung mit „Deine häufigsten“. Tippen zum Aktualisieren.' }
+}
+
+function isRealAdmin(){
+  return !!(currentEmployee?.is_admin && currentEmployee?.hidden_from_login)
+}
+
+function announceSendHtml(){
+  if(!isRealAdmin()) return ''
+  const t = ANNOUNCE_PUSH_TEMPLATES
+  return `
+    <details class="announce-send" id="announceSendBox">
+      <summary>📣 Mitteilung senden</summary>
+      <div class="as-group">
+        <label class="as-check"><input type="checkbox" id="asBossOn" checked> An Chef-Geräte</label>
+        <input type="text" id="asBossTitle" maxlength="80" value="${t.boss.title}">
+        <textarea id="asBossBody" rows="3" maxlength="240">${t.boss.body}</textarea>
+      </div>
+      <div class="as-group">
+        <label class="as-check"><input type="checkbox" id="asEmpOn" checked> An Mitarbeiter-Geräte</label>
+        <input type="text" id="asEmpTitle" maxlength="80" value="${t.emp.title}">
+        <textarea id="asEmpBody" rows="3" maxlength="240">${t.emp.body}</textarea>
+      </div>
+      <div class="as-note">Wird sofort gesendet · nicht zwischen 17:40 und 17:55 (Tagesbericht).</div>
+      <button class="primary" id="asSendBtn">Jetzt senden</button>
+    </details>`
+}
+
+function wireAnnounceSendForm(){
+  const btn = document.getElementById('asSendBtn')
+  if(!btn) return
+  btn.addEventListener('click', async ()=>{
+    const val = (id) => (document.getElementById(id)?.value || '').trim()
+    const messages = {}
+    if(document.getElementById('asBossOn')?.checked) messages.boss = { title: val('asBossTitle'), body: val('asBossBody') }
+    if(document.getElementById('asEmpOn')?.checked) messages.emp = { title: val('asEmpTitle'), body: val('asEmpBody') }
+    const groups = Object.keys(messages)
+    if(!groups.length){ showToast('Bitte mindestens eine Empfängergruppe wählen'); return }
+    if(groups.some(g => !messages[g].title || !messages[g].body)){ showToast('Titel und Text dürfen nicht leer sein'); return }
+    const who = groups.map(g => g === 'boss' ? 'Chef-Geräte' : 'Mitarbeiter-Geräte').join(' und ')
+    if(!confirm(`Mitteilung jetzt an alle ${who} senden?`)) return
+    btn.disabled = true
+    btn.textContent = 'Wird gesendet…'
+    try {
+      const { data, error } = await supabase.functions.invoke('send-announcement', { body: { messages } })
+      if(error || !data || data.error){
+        showToast('Fehler: ' + ((data && data.error) || (error && error.message) || 'Unbekannt'))
+        return
+      }
+      const part = (g, label) => data[g] ? `${label}: ${data[g].sent} gesendet${data[g].failed ? `, ${data[g].failed} fehlgeschlagen` : ''}` : null
+      showToast([part('boss', 'Chef'), part('emp', 'Mitarbeiter')].filter(Boolean).join(' · '))
+      document.getElementById('announceSendBox')?.removeAttribute('open')
+    } catch(e){
+      showToast('Fehler: ' + e.message)
+    } finally {
+      btn.disabled = false
+      btn.textContent = 'Jetzt senden'
+    }
+  })
+}
+
 // ============ ÇALIŞAN GİRİŞİ (TAGESANSICHT) ============
 
 async function renderEmployeeDay(){
@@ -1544,6 +1641,7 @@ async function renderEmployeeDay(){
     </div>
 
     <button class="secondary emp-monthly-btn" id="monthlyReportBtn">📅 Monatsbericht</button>
+    ${!isHiddenAdmin ? '<div class="emp-push-wrap" id="empPushWrap"></div>' : ''}
     </div>
     </div>
 
@@ -1603,6 +1701,7 @@ async function renderEmployeeDay(){
     wireJobForm('emp', ()=>selectedJobType, (jt)=>{ selectedJobType = jt }, ()=>!!savedBranch || isBranchExempt)
     document.getElementById('empAddBtn').addEventListener('click', addRecord)
     loadFreqJobTiles('emp', currentEmployee.id)
+    renderEmpPushRow()
   }
   document.getElementById('monthlyReportBtn').addEventListener('click', ()=>renderEmployeeMonthlyReport())
   document.querySelectorAll('[data-del]').forEach(btn=>{
@@ -1754,19 +1853,22 @@ async function getPushSubscriptionStatus(){
   return 'subscribed'
 }
 
-async function resetPushSubscription(){
+async function resetPushSubscription(audience){
   try {
     const reg = await navigator.serviceWorker.ready
     const sub = await reg.pushManager.getSubscription()
     if(sub) await sub.unsubscribe()
     showToast('Zurückgesetzt')
-    renderBossDashboard()
+    if(audience === 'emp') renderEmployeeDay(); else renderBossDashboard()
   } catch(e){
     showToast('Fehler: ' + e.message)
   }
 }
 
-async function enablePushNotifications(){
+// audience (schema_v37.sql): 'boss' = Chef/Admin-Gerät (bekommt den 17:45
+// Tagesbericht), 'emp' = Mitarbeiter-Gerät (NUR Mitteilungen, nie Umsatz).
+async function enablePushNotifications(audience){
+  audience = audience === 'emp' ? 'emp' : 'boss'
   try {
     const permission = await Notification.requestPermission()
     if(permission !== 'granted'){ showToast('Benachrichtigungen wurden nicht erlaubt'); return }
@@ -1776,14 +1878,24 @@ async function enablePushNotifications(){
       applicationServerKey: urlBase64ToUint8Array(VAPID_PUBLIC_KEY)
     })
     const json = sub.toJSON()
-    const { error } = await supabase.from('push_subscriptions').upsert({
-      endpoint: json.endpoint,
-      p256dh: json.keys.p256dh,
-      auth: json.keys.auth
+    const baseRow = { endpoint: json.endpoint, p256dh: json.keys.p256dh, auth: json.keys.auth }
+    let { error } = await supabase.from('push_subscriptions').upsert({
+      ...baseRow, audience, employee_id: currentEmployee?.id || null
     }, { onConflict: 'endpoint' })
+    // schema_v37.sql noch nicht ausgeführt (Spalten fehlen): Chef-Geräte
+    // wie bisher speichern. Mitarbeiter-Geräte NICHT — ohne Spalte würden
+    // sie später als 'boss' gelten und den Tagesbericht mit Umsatz bekommen.
+    if(error && /audience|employee_id|42703|PGRST204/i.test((error.message || '') + ' ' + (error.code || ''))){
+      if(audience === 'emp'){
+        try { await sub.unsubscribe() } catch(e){}
+        showToast('Mitteilungen sind noch nicht eingerichtet — bitte später erneut versuchen.')
+        return
+      }
+      ;({ error } = await supabase.from('push_subscriptions').upsert(baseRow, { onConflict: 'endpoint' }))
+    }
     if(error){ showToast('Fehler: ' + error.message); return }
-    showToast('Benachrichtigungen aktiviert')
-    renderBossDashboard()
+    showToast(audience === 'emp' ? 'Mitteilungen aktiviert' : 'Benachrichtigungen aktiviert')
+    if(audience === 'emp') renderEmployeeDay(); else renderBossDashboard()
   } catch(e){
     showToast('Fehler: ' + e.message)
   }
@@ -1917,6 +2029,7 @@ async function renderBossDashboard(){
         <button class="report-link accent" id="pdfBtn">Als PDF speichern <span class="chev">↓</span></button>
       </div>
       ${pushCardHtml}
+      ${announceSendHtml()}
     </div>
   `
 
@@ -2674,8 +2787,9 @@ function wireBossControls(){
     bossRange.filtersOpen = !panel.classList.contains('open')
     panel.classList.toggle('open', bossRange.filtersOpen)
   })
-  document.getElementById('enablePushBtn')?.addEventListener('click', enablePushNotifications)
-  document.getElementById('resetPushBtn')?.addEventListener('click', resetPushSubscription)
+  document.getElementById('enablePushBtn')?.addEventListener('click', ()=>enablePushNotifications('boss'))
+  document.getElementById('resetPushBtn')?.addEventListener('click', ()=>resetPushSubscription('boss'))
+  wireAnnounceSendForm()
   document.querySelectorAll('.range-chip[data-mode]').forEach(chip=>{
     chip.addEventListener('click', ()=>{
       bossRange.mode = chip.dataset.mode

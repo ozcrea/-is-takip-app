@@ -16,17 +16,22 @@ self.addEventListener('push', (event) => {
       body: data.body,
       icon: '/icons/icon-192.png',
       badge: '/icons/icon-192.png',
+      data: { url: data.url || '/' },
     })
   )
 })
 
+// Bildirime dokununca: açık bir uygulama penceresi varsa öne getirilir VE
+// yeniden yüklenir (böylece her zaman en güncel sürüm açılır — ör.
+// "Version 7.2" duyurusu veya 17:45 raporu); yoksa yeni pencere açılır.
 self.addEventListener('notificationclick', (event) => {
   event.notification.close()
-  event.waitUntil(
-    self.clients.matchAll({ type: 'window' }).then((clientsArr) => {
-      const existing = clientsArr.find((c) => 'focus' in c)
-      if (existing) return existing.focus()
-      return self.clients.openWindow('/')
-    })
-  )
+  const url = (event.notification.data && event.notification.data.url) || '/'
+  event.waitUntil((async () => {
+    const clientsArr = await self.clients.matchAll({ type: 'window', includeUncontrolled: true })
+    const existing = clientsArr.find((c) => 'focus' in c)
+    if (!existing) return self.clients.openWindow(url)
+    try { await existing.focus() } catch (e) {}
+    try { if ('navigate' in existing) await existing.navigate(url) } catch (e) {}
+  })())
 })
