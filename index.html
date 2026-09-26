@@ -172,6 +172,36 @@
     .dash > .entries-card{ order:10; }
     .dash.dash-empty > *{ grid-column:1 / -1; }
   }
+  /* ---- Standort (Vorarbeiter) ---- */
+  .standort-pick{ padding-bottom:12px; }
+  .standort-chips{ display:flex; flex-wrap:wrap; gap:8px; }
+  .standort-chip{ background:var(--steel-2); border:1px solid var(--line); color:var(--ink); border-radius:22px; padding:9px 14px; cursor:pointer; font:inherit; font-size:14px; font-weight:600; display:inline-flex; align-items:center; gap:8px; }
+  .standort-chip .chip-mark{ font-family:'JetBrains Mono',monospace; font-size:11px; font-weight:500; color:var(--green); }
+  .standort-chip.selected{ border-color:var(--amber); background:rgba(245,166,35,0.15); color:var(--amber); }
+  .standort-banner{ background:rgba(245,166,35,0.12); border:1px solid var(--amber); color:var(--ink); border-radius:12px; padding:12px 16px; margin-bottom:14px; font-size:16px; }
+  .standort-banner b{ color:var(--amber); font-size:18px; }
+  .standort-banner .mono{ color:var(--ink-dim); font-size:12px; margin-left:6px; }
+  .standort-branch-note{ font-size:12.5px; color:var(--ink-dim); margin:0 0 14px; }
+  .standort-branches{ display:flex; flex-direction:column; gap:8px; }
+  .standort-branch-btn.selected{ border-color:#6FA3D8; color:#AAB6C2; }
+  .standort-hint{ padding:24px 10px; }
+  /* ---- Zugänge verwalten ---- */
+  .access-intro{ font-size:12.5px; color:var(--ink-dim); margin:-4px 0 10px; }
+  .access-list{ display:flex; flex-direction:column; }
+  .access-row{ display:flex; align-items:center; gap:10px; padding:9px 0; border-bottom:1px solid var(--line); }
+  .access-row:last-child{ border-bottom:none; }
+  .access-who{ flex:1; min-width:0; display:flex; flex-direction:column; }
+  .access-who .nm{ font-weight:600; font-size:14px; }
+  .access-who .ak{ font-size:11px; color:var(--ink-dim); }
+  .access-status{ font-size:11.5px; white-space:nowrap; }
+  .access-status.ok{ color:var(--green); }
+  .access-status.warn{ color:var(--amber); }
+  .access-form{ border-top:1px solid var(--line); margin-top:10px; padding-top:12px; }
+  .access-form-title{ font-size:14px; margin-bottom:10px; }
+  .access-pw-row{ display:flex; gap:8px; align-items:center; }
+  .access-pw-row input{ margin-bottom:0; font-size:17px; letter-spacing:.04em; }
+  .access-note{ font-size:11.5px; color:var(--ink-dim); margin:8px 0 12px; }
+  .access-actions{ display:flex; gap:8px; }
   /* ---- Push-Mitteilungen ---- */
   .emp-push-wrap{ margin-bottom:14px; }
   .emp-push-row{ display:flex; align-items:center; justify-content:space-between; gap:10px; padding:10px 4px; font-size:13px; }
@@ -447,7 +477,21 @@ const appNav = document.getElementById('appNav')
 
 function setChromeVisible(visible){
   appHeader.style.display = visible ? 'flex' : 'none'
-  appNav.style.display = visible ? 'flex' : 'none'
+  appNav.style.display = visible && !standortMode ? 'flex' : 'none'
+}
+
+// Günlük ekranın "kimin adına" çalıştığı: normalde giriş yapan çalışan,
+// Standort modunda Vorarbeiter'in seçtiği çalışan.
+function dayEmployee(){
+  if(standortMode) return employees.find(e => e.id === standortSubjectId) || null
+  return currentEmployee
+}
+
+function readStandortState(){
+  try { return JSON.parse(localStorage.getItem(STANDORT_KEY) || 'null') } catch(e){ return null }
+}
+function writeStandortState(v){
+  try { v ? localStorage.setItem(STANDORT_KEY, JSON.stringify(v)) : localStorage.removeItem(STANDORT_KEY) } catch(e){}
 }
 
 let bossUnlocked = false
@@ -455,6 +499,14 @@ let employees = []
 let jobTypes = []
 let currentEmployee = null
 let selectedJobType = null
+// Standort (Vorarbeiter) modu: bir şubenin Vorarbeiter'i (employees.lead_branch,
+// schema_v38.sql) "Standort" girişiyle girer ve çalışanlarını seçip ÇIKIŞ
+// YAPMADAN onların adına saat/Auftrag girer. currentEmployee = giriş yapan
+// Vorarbeiter; standortSubjectId = o an adına kayıt girilen çalışan.
+// Kayıtlarda "kim girdi" (entered_by) sunucu tarafında otomatik yazılır.
+const STANDORT_KEY = 'aw_standort'
+let standortMode = null          // { branch, leadId } veya null
+let standortSubjectId = null
 let bossRange = { mode: 'today', start: null, end: null }
 
 function showToast(msg){
@@ -907,7 +959,7 @@ function syncFreqSelected(prefix, jobTypeId){
 // Sadece görüntüleme kısayolu — tıklanınca listedeki asıl .job-btn'ye
 // tıklanmış gibi davranır (tüm form mantığı tek yerde kalır). Hata olursa
 // veya yeterli veri yoksa bölüm gizli kalır; ana ekranı asla bloklamaz.
-async function loadFreqJobTiles(prefix, employeeId){
+async function loadFreqJobTiles(prefix, employeeId, label){
   const freq = document.getElementById(prefix + 'FreqWrap')
   const list = document.getElementById(prefix + 'JobList')
   if(!freq || !list) return
@@ -934,7 +986,7 @@ async function loadFreqJobTiles(prefix, employeeId){
       .sort((a,b) => b[1] - a[1])
       .slice(0, 6)
     if(top.length < 2) return
-    freq.innerHTML = `<div class="list-label">Deine häufigsten</div><div class="freq-grid">` + top.map(([id]) => {
+    freq.innerHTML = `<div class="list-label">${label || 'Deine häufigsten'}</div><div class="freq-grid">` + top.map(([id]) => {
       const jt = jobTypes.find(j => j.id === id)
       const priceTxt = list.querySelector(`.job-btn[data-id="${id}"] .job-price`)?.textContent || ''
       return `<button type="button" class="freq-tile" data-freq-id="${id}"><span class="code">${jt.code}</span><span class="job-price">${priceTxt}</span></button>`
@@ -1204,12 +1256,14 @@ function renderLandingScreen(){
         </div>
         <div class="panel" id="landingPanel">
           <button class="btn-login" id="landingLoginBtn">Anmelden</button>
+          <button class="btn-boss" id="landingStandortBtn">Standort</button>
           <button class="btn-boss" id="landingBossBtn">Chef-Panel</button>
         </div>
       </div>
     </div>
   `
   document.getElementById('landingLoginBtn').addEventListener('click', renderLandingEmployeeLogin)
+  document.getElementById('landingStandortBtn').addEventListener('click', renderLandingStandortLogin)
   document.getElementById('landingBossBtn').addEventListener('click', renderLandingBossLogin)
 }
 
@@ -1228,6 +1282,7 @@ async function authenticateEmployee(emp, password){
 }
 
 function routeAfterLogin(emp){
+  leaveStandort()
   currentEmployee = emp
   localStorage.setItem(SESSION_KEY, emp.id)
   updateLogoutBtn()
@@ -1340,6 +1395,7 @@ logoutBtn.addEventListener('click', async ()=>{
   }
   currentEmployee = null
   bossUnlocked = false
+  leaveStandort()
   localStorage.removeItem(SESSION_KEY)
   updateLogoutBtn()
   tabEmployee.style.display = ''
@@ -1512,6 +1568,229 @@ function wireAnnounceSendForm(){
   })
 }
 
+// ============ STANDORT (VORARBEITER) ============
+// Vorarbeiter bir kez "Standort" ile girer; çalışan seçip çıkış yapmadan
+// onların adına saat/Auftrag girer. Şube sabittir (lead_branch). Gün
+// değişince oturum otomatik kapanır (paylaşılan tablet için).
+
+function standortEmployees(){
+  return employees.filter(e => !e.hidden_from_login && !e.is_admin && !e.is_chef_viewer)
+}
+
+function standortLeads(branch){
+  return employees.filter(e => e.lead_branch === branch && !e.is_admin && !e.is_chef_viewer)
+}
+
+function standortChipsHtml(hoursToday, subjectId){
+  const hoursBy = {}
+  hoursToday.forEach(h => { hoursBy[h.employee_id] = h })
+  const list = standortEmployees().slice().sort((a, b) => {
+    // Bugün bu şubede saati girilmiş olanlar önce, sonra isme göre.
+    const ah = hoursBy[a.id]?.branch === standortMode.branch ? 0 : 1
+    const bh = hoursBy[b.id]?.branch === standortMode.branch ? 0 : 1
+    return ah - bh || String(a.name).localeCompare(String(b.name), 'de')
+  })
+  return list.map(e => {
+    const h = hoursBy[e.id]
+    const mark = h ? `<span class="chip-mark">${h.hours} Std${h.branch && h.branch !== standortMode.branch ? ' · ' + h.branch : ''}</span>` : ''
+    return `<button type="button" class="standort-chip${e.id === subjectId ? ' selected' : ''}${h ? ' has-hours' : ''}" data-emp="${e.id}"><span class="nm">${e.name}</span>${mark}</button>`
+  }).join('')
+}
+
+function standortHeadHtml(hoursToday, subject){
+  const lead = currentEmployee
+  const helloDate = new Date().toLocaleDateString('de-DE', { weekday:'short', day:'2-digit', month:'2-digit', year:'numeric' })
+  return `
+    <div class="emp-hello">
+      <div class="hello">Willkommen, ${standortMode.branch}</div>
+      <div class="hello-meta mono">Vorarbeiter: ${lead.name} · ${helloDate}</div>
+    </div>
+    <div class="card standort-pick">
+      <label>Mitarbeiter wählen</label>
+      <div class="standort-chips" id="standortChips">${standortChipsHtml(hoursToday, subject ? subject.id : null)}</div>
+    </div>
+    ${subject ? `<div class="standort-banner" id="standortBanner">Eintrag für: <b>${subject.name}</b> <span class="mono">${subject.akt_no}</span></div>` : ''}
+  `
+}
+
+function wireStandortHead(){
+  document.querySelectorAll('#standortChips .standort-chip[data-emp]').forEach(chip=>{
+    chip.addEventListener('click', ()=>{
+      if(chip.dataset.emp === standortSubjectId) return
+      standortSubjectId = chip.dataset.emp
+      selectedJobType = null
+      renderEmployeeDay()
+    })
+  })
+}
+
+async function renderStandortHome(){
+  main.innerHTML = `<div class="empty">Lädt...</div>`
+  const { data } = await supabase.from('daily_hours').select('employee_id, hours, branch').eq('work_date', todayStr())
+  if(!standortMode) return
+  main.innerHTML = `
+    <div class="emp-screen layout-wide">
+      ${standortHeadHtml(data || [], null)}
+      <div class="empty standort-hint">Bitte oben einen Mitarbeiter wählen.</div>
+    </div>`
+  maybeShowAnnouncement('emp')
+  wireStandortHead()
+}
+
+function enterStandort(lead, branch){
+  currentEmployee = lead
+  standortMode = { branch, leadId: lead.id }
+  standortSubjectId = null
+  selectedJobType = null
+  localStorage.setItem(SESSION_KEY, lead.id)
+  writeStandortState({ empId: lead.id, branch, date: todayStr() })
+  bossUnlocked = false
+  updateLogoutBtn()
+  setChromeVisible(true)
+  headerTitle.textContent = branch
+  tabEmployee.classList.add('active'); tabBoss.classList.remove('active')
+  renderEmployeeDay()
+}
+
+function leaveStandort(){
+  standortMode = null
+  standortSubjectId = null
+  writeStandortState(null)
+}
+
+function renderLandingStandortLogin(){
+  const branches = BRANCHES.filter(b => standortLeads(b).length)
+  document.getElementById('landingPanel').innerHTML = `
+    <div class="standort-branches">
+      ${branches.length ? branches.map(b => `<button type="button" class="btn-boss standort-branch-btn" data-branch="${b}">${b}</button>`).join('') : '<div class="sub" style="text-align:center;">Kein Standort eingerichtet</div>'}
+    </div>
+    <div id="standortLoginWrap"></div>
+    <button class="btn-boss" id="landingBackBtn">← Zurück</button>
+  `
+  document.querySelectorAll('.standort-branch-btn[data-branch]').forEach(btn=>{
+    btn.addEventListener('click', ()=>{
+      document.querySelectorAll('.standort-branch-btn').forEach(b=>b.classList.toggle('selected', b === btn))
+      const branch = btn.dataset.branch
+      const leads = standortLeads(branch)
+      document.getElementById('standortLoginWrap').innerHTML = `
+        ${leads.length > 1 ? `<select id="standortLeadSelect">${leads.map(e => `<option value="${e.id}">${e.name}</option>`).join('')}</select>` : ''}
+        <input type="password" id="standortPassword" placeholder="Passwort">
+        <button class="btn-login" id="standortLoginBtn">Anmelden · ${branch}</button>
+      `
+      const submit = async ()=>{
+        const leadId = document.getElementById('standortLeadSelect')?.value || leads[0].id
+        const lead = employees.find(e => e.id === leadId)
+        const pw = document.getElementById('standortPassword').value
+        if(!lead){ showToast('Vorarbeiter nicht gefunden'); return }
+        const ok = await authenticateEmployee(lead, pw)
+        if(!ok){ showToast('Falsches Passwort'); return }
+        enterStandort(lead, branch)
+      }
+      document.getElementById('standortLoginBtn').addEventListener('click', submit)
+      document.getElementById('standortPassword').addEventListener('keydown', (e)=>{ if(e.key === 'Enter') submit() })
+      document.getElementById('standortPassword').focus()
+    })
+  })
+  document.getElementById('landingBackBtn').addEventListener('click', renderLandingScreen)
+}
+
+// ============ ZUGÄNGE VERWALTEN (nur Admin) ============
+// Güçlü şifre verme / henüz gerçek girişi olmayan hesabı (Chef, W3)
+// etkinleştirme. Asıl işlem sunucuda (Edge Function admin-account):
+// Admin rolü orada ayrıca kontrol edilir. Admin'in kendi hesabı burada
+// değiştirilemez (Supabase Dashboard).
+
+// Edge Function'daki kuralla aynı.
+function passwordProblem(pw, aktNo){
+  if(pw.length < 10) return 'Mindestens 10 Zeichen'
+  if(pw.length > 72) return 'Höchstens 72 Zeichen'
+  if(!/[A-Za-z]/.test(pw) || !/[0-9]/.test(pw)) return 'Buchstaben und Ziffern verwenden'
+  if(aktNo && pw.toLowerCase().includes(String(aktNo).toLowerCase())) return 'Darf die AKT-Nummer nicht enthalten'
+  return null
+}
+
+// Okunaklı güçlü şifre: 3 blok × 4 karakter (karışabilen 0/O, 1/l/I yok).
+function generatePassword(){
+  const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz23456789'
+  // Harf+rakam içerene kadar yeniden üret (bir denemede ~%85 olasılıkla olur).
+  while(true){
+    const buf = new Uint32Array(12)
+    crypto.getRandomValues(buf)
+    const raw = Array.from(buf, n => chars[n % chars.length]).join('')
+    const pw = `${raw.slice(0,4)}-${raw.slice(4,8)}-${raw.slice(8,12)}`
+    if(/[A-Za-z]/.test(pw) && /[0-9]/.test(pw)) return pw
+  }
+}
+
+function accessAdminHtml(){
+  const list = employees.filter(e => !e.is_admin).slice().sort((a, b) => String(a.name).localeCompare(String(b.name), 'de'))
+  return `
+    <div class="card access-card" id="accessAdminCard">
+      <label>🔐 Zugänge verwalten</label>
+      <div class="access-intro">Neues Passwort setzen. Konten ohne echten Login (⚠) werden dabei aktiviert.</div>
+      <div class="access-list">
+        ${list.map(e => `
+          <div class="access-row" data-emp="${e.id}">
+            <div class="access-who">
+              <span class="nm">${e.name}</span>
+              <span class="mono ak">${e.akt_no}${e.lead_branch ? ' · Vorarbeiter ' + e.lead_branch : ''}${e.is_chef_viewer ? ' · Chef' : ''}</span>
+            </div>
+            <span class="access-status ${e.auth_user_id ? 'ok' : 'warn'}">${e.auth_user_id ? '✓ Login' : '⚠ nicht aktiviert'}</span>
+            <button type="button" class="icon-btn access-set-btn" data-emp="${e.id}">Passwort setzen</button>
+          </div>`).join('')}
+      </div>
+      <div id="accessForm"></div>
+    </div>`
+}
+
+function wireAccessAdmin(){
+  document.querySelectorAll('.access-set-btn[data-emp]').forEach(btn=>{
+    btn.addEventListener('click', ()=>{
+      const emp = employees.find(e => e.id === btn.dataset.emp)
+      if(!emp) return
+      const wrap = document.getElementById('accessForm')
+      wrap.innerHTML = `
+        <div class="access-form">
+          <div class="access-form-title">${emp.auth_user_id ? 'Neues Passwort für' : 'Konto aktivieren für'} <b>${emp.name}</b> <span class="mono">${emp.akt_no}</span></div>
+          <div class="access-pw-row">
+            <input type="text" id="accessPwInput" class="mono" autocomplete="off" spellcheck="false" value="${generatePassword()}">
+            <button type="button" class="icon-btn" id="accessGenBtn">Neu erzeugen</button>
+          </div>
+          <div class="access-note">Passwort vor dem Speichern notieren (z. B. im Passwort-Manager). Es wird danach nicht mehr angezeigt.</div>
+          <div class="access-actions">
+            <button type="button" class="primary" id="accessSaveBtn">${emp.auth_user_id ? 'Passwort speichern' : 'Konto aktivieren'}</button>
+            <button type="button" class="secondary" id="accessCancelBtn">Abbrechen</button>
+          </div>
+        </div>`
+      wrap.scrollIntoView({ behavior: 'smooth', block: 'nearest' })
+      document.getElementById('accessGenBtn').addEventListener('click', ()=>{ document.getElementById('accessPwInput').value = generatePassword() })
+      document.getElementById('accessCancelBtn').addEventListener('click', ()=>{ wrap.innerHTML = '' })
+      document.getElementById('accessSaveBtn').addEventListener('click', async ()=>{
+        const pw = document.getElementById('accessPwInput').value.trim()
+        const problem = passwordProblem(pw, emp.akt_no)
+        if(problem){ showToast('Passwort ungültig: ' + problem); return }
+        if(!confirm(`${emp.auth_user_id ? 'Neues Passwort' : 'Konto aktivieren'} für ${emp.name} speichern? Das alte Passwort ist danach ungültig.`)) return
+        const saveBtn = document.getElementById('accessSaveBtn')
+        saveBtn.disabled = true
+        try {
+          const { data, error } = await supabase.functions.invoke('admin-account', { body: { employee_id: emp.id, password: pw } })
+          if(error || !data || data.error || !data.ok){
+            showToast('Fehler: ' + ((data && data.error) || (error && error.message) || 'Unbekannt'))
+            saveBtn.disabled = false
+            return
+          }
+          showToast(data.activated ? `Konto aktiviert: ${emp.name}` : `Passwort gesetzt: ${emp.name}`)
+          await loadStaticData()
+          renderEmployeeDay()
+        } catch(e){
+          showToast('Fehler: ' + e.message)
+          saveBtn.disabled = false
+        }
+      })
+    })
+  })
+}
+
 // ============ ÇALIŞAN GİRİŞİ (TAGESANSICHT) ============
 
 async function renderEmployeeDay(){
@@ -1528,20 +1807,26 @@ async function renderEmployeeDay(){
   main.innerHTML = `<div class="empty">Lädt...</div>`
 
   const today = todayStr()
+  // subject: kimin günü gösteriliyor — normalde giriş yapan çalışan,
+  // Standort modunda Vorarbeiter'in seçtiği çalışan (bkz. dayEmployee).
+  const subject = dayEmployee()
+  const isStandort = !!standortMode
+  if(isStandort && !subject){ renderStandortHome(); return }
   // Karar değişikliği: çalışanın kendi Einträge listesi/silme yetkisi
   // 48 saat yerine "aynı takvim günü" ile sınırlı (bkz. schema_v30.sql'deki
   // records_delete_recent — Europe/Berlin takvim günü kontrolü). Bu yüzden
   // liste de tekrar SADECE bugünle sınırlandırıldı.
-  const [hoursRes, recordsRes] = await Promise.all([
-    supabase.from('daily_hours').select('*').eq('employee_id', currentEmployee.id).eq('work_date', today).maybeSingle(),
-    supabase.from('records').select('*, job_types(code, name, is_aufbereitung, is_mts, is_variable_price, is_quantity)').eq('employee_id', currentEmployee.id).gte('created_at', startOfDayISO(today)).lt('created_at', endOfDayISO(today)).order('created_at', { ascending: false })
+  const [hoursRes, recordsRes, standortHoursRes] = await Promise.all([
+    supabase.from('daily_hours').select('*').eq('employee_id', subject.id).eq('work_date', today).maybeSingle(),
+    supabase.from('records').select('*, job_types(code, name, is_aufbereitung, is_mts, is_variable_price, is_quantity)').eq('employee_id', subject.id).gte('created_at', startOfDayISO(today)).lt('created_at', endOfDayISO(today)).order('created_at', { ascending: false }),
+    isStandort ? supabase.from('daily_hours').select('employee_id, hours, branch').eq('work_date', today) : Promise.resolve({ data: [] })
   ])
 
   const savedHours = hoursRes.data?.hours ?? null
   const savedBranch = hoursRes.data?.branch ?? null
   // SmartRepair hesabı, günlük saat/şube girme zorunluluğundan muaf —
   // bu hesap doğrudan Auftrag ekleyebilmeli (bkz. wireJobForm çağrısı aşağıda).
-  const isBranchExempt = currentEmployee.akt_no === 'SmartRepair'
+  const isBranchExempt = subject.akt_no === 'SmartRepair'
   const todaysRecords = recordsRes.data || []
 
   const qtyCounts = {}
@@ -1573,21 +1858,25 @@ async function renderEmployeeDay(){
   ` : ''
 
   const firstName = String(currentEmployee.name || '').trim().split(/\s+/)[0] || currentEmployee.name
+  const subjectFirst = String(subject.name || '').trim().split(/\s+/)[0] || subject.name
   const helloDate = new Date().toLocaleDateString('de-DE', { weekday:'short', day:'2-digit', month:'2-digit', year:'numeric' })
 
   main.innerHTML = `
     <div class="emp-screen${isHiddenAdmin ? '' : ' layout-wide'}">
+    ${isStandort ? standortHeadHtml(standortHoursRes.data || [], subject) : `
     <div class="emp-hello">
       <div class="hello">Hallo, ${firstName}</div>
       <div class="hello-meta mono">${currentEmployee.akt_no} · ${helloDate}</div>
-    </div>
+    </div>`}
 
     <div class="emp-grid${isHiddenAdmin ? ' emp-grid-admin' : ''}">
     <div class="col-main">
     ${!isHiddenAdmin ? `
     <div class="card emp-job-card">
       <label>Neuen Auftrag hinzufügen</label>
-      ${!savedBranch && !isBranchExempt ? `<div class="sub" style="color:var(--red);margin:-4px 0 14px;">⚠ Bitte zuerst oben deine Filiale für heute speichern.</div>` : ''}
+      ${!savedBranch && !isBranchExempt ? (isStandort
+        ? `<div class="sub" style="color:var(--red);margin:-4px 0 14px;">⚠ Bitte zuerst die Stunden von ${subjectFirst} für heute speichern.</div>`
+        : `<div class="sub" style="color:var(--red);margin:-4px 0 14px;">⚠ Bitte zuerst oben deine Filiale für heute speichern.</div>`) : ''}
       ${jobFormHtml('emp', qtyCounts, savedBranch, { sheet: true })}
     </div>
     ` : ''}
@@ -1605,6 +1894,13 @@ async function renderEmployeeDay(){
             <button class="secondary" id="deleteHoursBtn" style="color:var(--red);">Löschen</button>
           </div>
         </div>
+      ` : isStandort ? `
+        <label>Wie viele Stunden hat ${subjectFirst} heute gearbeitet (ohne Pause)?</label>
+        <div class="hours-row" style="margin-bottom:6px;">
+          <input type="number" id="hoursInput" placeholder="z.B. 8.5" step="0.5" min="0" max="16">
+        </div>
+        <div class="standort-branch-note">Filiale: <b>${standortMode.branch}</b> (automatisch)</div>
+        <button class="primary" id="saveHoursBtn" disabled>Speichern</button>
       ` : `
         <label>Wie viele Stunden hast du heute gearbeitet (ohne Pause)?</label>
         <div class="hours-row" style="margin-bottom:14px;">
@@ -1620,7 +1916,7 @@ async function renderEmployeeDay(){
     ` : ''}
 
     <div class="card emp-entries-card">
-      <label>${todayLabel()} — Deine heutigen Einträge (${todaysRecords.length})</label>
+      <label>${isStandort ? `Heutige Einträge von ${subject.name} (${todaysRecords.length})` : `${todayLabel()} — Deine heutigen Einträge (${todaysRecords.length})`}</label>
       <div class="entry-list" id="entryList">
         ${todaysRecords.length === 0 ? '<div class="empty">Noch keine Einträge</div>' : todaysRecords.map(r => `
           <div class="entry">
@@ -1640,31 +1936,35 @@ async function renderEmployeeDay(){
       </div>
     </div>
 
-    <button class="secondary emp-monthly-btn" id="monthlyReportBtn">📅 Monatsbericht</button>
-    ${!isHiddenAdmin ? '<div class="emp-push-wrap" id="empPushWrap"></div>' : ''}
+    ${!isStandort ? '<button class="secondary emp-monthly-btn" id="monthlyReportBtn">📅 Monatsbericht</button>' : ''}
+    ${!isHiddenAdmin && !isStandort ? '<div class="emp-push-wrap" id="empPushWrap"></div>' : ''}
     </div>
     </div>
 
     ${adminBackdateHtml}
+    ${isHiddenAdmin ? accessAdminHtml() : ''}
     </div>
   `
   maybeShowAnnouncement(isHiddenAdmin ? 'boss' : 'emp')
+  if(isStandort) wireStandortHead()
 
-  let pickedBranch = null
+  // Standort modunda şube sabit: Vorarbeiter'in şubesi.
+  let pickedBranch = isStandort ? standortMode.branch : null
 
   if(!isHiddenAdmin){
     if(savedHours !== null){
       document.getElementById('editHoursBtn').addEventListener('click', async ()=>{
-        const val = prompt('Wie viele Stunden hast du heute gearbeitet (ohne Pause)?', savedHours)
+        const val = prompt(isStandort ? `Wie viele Stunden hat ${subjectFirst} heute gearbeitet (ohne Pause)?` : 'Wie viele Stunden hast du heute gearbeitet (ohne Pause)?', savedHours)
         if(val === null) return
         const num = parseFloat(val.replace(',','.'))
         if(isNaN(num)) { showToast('Ungültige Zahl'); return }
+        if(isStandort){ await saveHours(num, standortMode.branch); return }
         const br = prompt('Welche Filiale? (Ausschläger Weg / Horn / Wiesendamm)', savedBranch || '')
         await saveHours(num, br || savedBranch)
       })
       document.getElementById('deleteHoursBtn').addEventListener('click', async ()=>{
         if(!confirm('Diese Stunden/Filiale-Eintragung löschen?')) return
-        const { error, count } = await supabase.from('daily_hours').delete({ count: 'exact' }).eq('employee_id', currentEmployee.id).eq('work_date', today)
+        const { error, count } = await supabase.from('daily_hours').delete({ count: 'exact' }).eq('employee_id', subject.id).eq('work_date', today)
         if(error){ showToast('Fehler: ' + error.message); return }
         if(!count){ showToast('Fehler: Konnte nicht gelöscht werden — evtl. keine Berechtigung.'); return }
         showToast('Gelöscht')
@@ -1700,10 +2000,10 @@ async function renderEmployeeDay(){
   if(!isHiddenAdmin){
     wireJobForm('emp', ()=>selectedJobType, (jt)=>{ selectedJobType = jt }, ()=>!!savedBranch || isBranchExempt)
     document.getElementById('empAddBtn').addEventListener('click', addRecord)
-    loadFreqJobTiles('emp', currentEmployee.id)
-    renderEmpPushRow()
+    loadFreqJobTiles('emp', subject.id, isStandort ? `Häufig bei ${subjectFirst}` : null)
+    if(!isStandort) renderEmpPushRow()
   }
-  document.getElementById('monthlyReportBtn').addEventListener('click', ()=>renderEmployeeMonthlyReport())
+  document.getElementById('monthlyReportBtn')?.addEventListener('click', ()=>renderEmployeeMonthlyReport())
   document.querySelectorAll('[data-del]').forEach(btn=>{
     btn.addEventListener('click', async ()=>{
       if(!confirm('Diesen Eintrag löschen?')) return
@@ -1715,11 +2015,12 @@ async function renderEmployeeDay(){
     })
   })
   wireAdminBackdateForm()
+  if(isHiddenAdmin) wireAccessAdmin()
 }
 
 async function saveHours(num, branch){
   const { error } = await supabase.from('daily_hours').upsert({
-    employee_id: currentEmployee.id,
+    employee_id: dayEmployee().id,
     work_date: todayStr(),
     hours: num,
     branch: branch
@@ -1734,7 +2035,7 @@ async function addRecord(){
   const values = readJobFormValues('emp', jt)
   const { error, count } = await insertJobRecord({
     jobType: jt,
-    employeeId: currentEmployee.id,
+    employeeId: dayEmployee().id,
     values,
     dateStr: todayStr()
   })
@@ -3309,6 +3610,7 @@ async function startApp(){
   if(session){
     const emp = employees.find(e => e.auth_user_id === session.user.id)
     if(emp){
+      if(await restoreStandort(emp)) return
       routeAfterLogin(emp)
       return
     }
@@ -3334,9 +3636,31 @@ async function startApp(){
       renderLandingScreen()
       return
     }
-    if(emp){ currentEmployee = emp; updateLogoutBtn(); setChromeVisible(true); renderEmployeeDay(); return }
+    if(emp){
+      if(await restoreStandort(emp)) return
+      currentEmployee = emp; updateLogoutBtn(); setChromeVisible(true); renderEmployeeDay(); return
+    }
   }
   renderLandingScreen()
+}
+
+// Sayfa yenilenince Standort oturumu aynı gün içinde devam eder. Gün
+// değiştiyse (paylaşılan tablet) oturum kapatılır ve giriş ekranına dönülür.
+// true = durum ele alındı (Standort açıldı veya çıkış yapıldı).
+async function restoreStandort(emp){
+  const st = readStandortState()
+  if(!st) return false
+  if(st.empId !== emp.id || emp.lead_branch !== st.branch){ writeStandortState(null); return false }
+  if(st.date !== todayStr()){
+    writeStandortState(null)
+    localStorage.removeItem(SESSION_KEY)
+    if(emp.auth_user_id){ try { await supabase.auth.signOut() } catch(e){} }
+    showToast('Standort-Sitzung beendet (neuer Tag) — bitte erneut anmelden')
+    renderLandingScreen()
+    return true
+  }
+  enterStandort(emp, st.branch)
+  return true
 }
 
 async function init(){
